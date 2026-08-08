@@ -409,12 +409,21 @@ body {
 .params {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 4px 10px 10px;
+  gap: 6px;
+  padding: 14px 10px 12px;
   border-top: 1px solid var(--line);
 }
 
-.param { display: flex; flex-direction: column; gap: 4px; }
+.param { display: flex; flex-direction: column; gap: 0; }
+
+/*
+ * A 44px touch target leaves ~19px of dead space above and below the 6px track.
+ * That pushed every label away from its own slider while the first label sat
+ * tight against the card header. Pulling the input back in evens out the rhythm
+ * without shrinking the target — and a label always sits between two range
+ * inputs, so these margins can never make two hit areas overlap.
+ */
+.param input[type="range"] { margin: -9px 0; }
 
 .param-head {
   display: flex;
@@ -431,6 +440,8 @@ body {
   flex-direction: row;
   align-items: center;
   gap: 8px;
+  /* Sits below a slider that has been pulled up; restore its breathing room. */
+  margin-top: 2px;
   color: var(--muted);
   font-size: 12px;
   cursor: pointer;

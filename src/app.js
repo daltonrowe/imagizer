@@ -144,6 +144,13 @@ function currentJSON() {
   });
 }
 
+/**
+ * Which effect cards are expanded, by position. Reordering, removing or muting
+ * an effect does rebuild the list, and without this every open card would snap
+ * shut underneath the hand that touched it.
+ */
+let openCards = new Set();
+
 function renderChain() {
   el.chainList.replaceChildren(...chain.map((item, index) => renderChainItem(item, index)));
 }
@@ -156,6 +163,12 @@ function renderChainItem(item, index) {
   li.className = `effect${enabled ? '' : ' off'}`;
 
   const details = document.createElement('details');
+  details.open = openCards.has(index);
+  details.addEventListener('toggle', () => {
+    if (details.open) openCards.add(index);
+    else openCards.delete(index);
+  });
+
   const summary = document.createElement('summary');
   summary.innerHTML = `
     <span class="effect-index">${index + 1}</span>
@@ -230,8 +243,7 @@ function renderParams(effect, item, index) {
       input.value = value;
       input.addEventListener('input', () => {
         readout.textContent = input.value;
-        // No rebuild: recreating the swatch mid-pick closes the colour picker.
-        setParam(index, spec.key, input.value, { rebuild: false });
+        setParam(index, spec.key, input.value);
       });
       field.append(input);
       wrap.append(field);
@@ -254,8 +266,7 @@ function renderParams(effect, item, index) {
       readout.textContent = formatValue(value, spec);
       input.addEventListener('input', () => {
         readout.textContent = formatValue(Number(input.value), spec);
-        // Skip the rebuild: recreating the slider mid-drag drops the gesture.
-        setParam(index, spec.key, Number(input.value), { rebuild: false });
+        setParam(index, spec.key, Number(input.value));
       });
       field.append(input);
     }
@@ -266,11 +277,16 @@ function renderParams(effect, item, index) {
 
 const formatValue = (value, spec) => `${value}${spec.unit ?? ''}`;
 
-function setParam(index, key, value, options) {
+/**
+ * Changing a param never rebuilds the list. The control already displays its own
+ * new value, so there is nothing to refresh — and a rebuild would recreate the
+ * <details> it lives in, collapsing the card mid-edit.
+ */
+function setParam(index, key, value) {
   const next = chain.map((item, i) => (
     i === index ? { ...item, params: { ...item.params, [key]: value } } : item
   ));
-  updateChain(next, options);
+  updateChain(next, { rebuild: false });
 }
 
 function setEnabled(index, enabled) {
@@ -278,6 +294,13 @@ function setEnabled(index, enabled) {
 }
 
 function remove(index) {
+  // Cards after the removed one shift down a slot; their open state goes too.
+  const shifted = new Set();
+  for (const open of openCards) {
+    if (open < index) shifted.add(open);
+    else if (open > index) shifted.add(open - 1);
+  }
+  openCards = shifted;
   updateChain(chain.filter((_, i) => i !== index));
 }
 
@@ -286,6 +309,15 @@ function move(index, delta) {
   if (target < 0 || target >= chain.length) return;
   const next = [...chain];
   [next[index], next[target]] = [next[target], next[index]];
+
+  // The open state belongs to the effect, so it moves with it.
+  const from = openCards.has(index);
+  const to = openCards.has(target);
+  openCards.delete(index);
+  openCards.delete(target);
+  if (to) openCards.add(index);
+  if (from) openCards.add(target);
+
   updateChain(next);
 }
 
@@ -299,6 +331,7 @@ el.addEffect.addEventListener('change', () => {
 el.randomizeChain.addEventListener('click', () => {
   // A fresh generator, not the art seed: the button has to give something new
   // each press, while the chain it produces is captured as data in the JSON.
+  openCards.clear();
   updateChain(randomChain(createRng(randomSeed())));
   showEffectsTab();
 });
@@ -334,6 +367,7 @@ el.jsonApply.addEventListener('click', () => {
     const preset = chainFromJSON(el.json.value);
     if (preset.seed) applySeed(preset.seed);
     if (preset.crop) applyCrop(preset.crop.w, preset.crop.h);
+    openCards.clear();
     updateChain(preset.chain);
     toast(preset.dropped
       ? `Applied — ${preset.dropped} unknown effect${preset.dropped > 1 ? 's' : ''} skipped.`
