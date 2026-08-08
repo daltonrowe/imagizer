@@ -87,6 +87,7 @@ input of the next. Each has its own settings:
 | **Colorize** | Tints with a chosen colour, keeping luminance |
 | **Pixel Sort** | Sorts bright runs into streaks; max run is a share of the line |
 | **Channel Sort** | The same sort confined to one RGB channel, tearing colours apart |
+| **Slicer** | Cuts the image into bands and slides each one along its length |
 | **Vignette** | Darkens in from the edges, heaviest in the corners |
 | **Spotlight** | Darkens everything outside a circle in the middle |
 | **Threshold BW** | One luminance cut, two tones |
@@ -95,6 +96,13 @@ input of the next. Each has its own settings:
 | **Bayer Dither** | Ordered dithering, a woven crosshatch |
 | **Random Dither** | A random threshold per cell — grain, not pattern |
 | **Reblend Original** | Composites the untouched crop back on top |
+
+**Slicer** cuts the image into bands — horizontal ones are rows that shift left
+and right, vertical ones are columns that shift up and down — with band size,
+size jitter and shift all given as percentages, so a look holds at any crop size.
+Shifting does not wrap, so a band leaves a gap behind it; the toggle decides
+whether those gaps punch through to transparency, which a PNG export keeps, or
+land on a chosen colour.
 
 Pixel Sort and Channel Sort share one walk over the image and differ in what
 moves. Pixel Sort keys on luminance and moves whole pixels, so every colour in

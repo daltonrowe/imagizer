@@ -57,7 +57,7 @@ test('every effect is registered with the metadata the UI needs', () => {
   const ids = EFFECTS.map((e) => e.id);
   assert.deepEqual(ids.slice().sort(), [
     'atkinson', 'bayer', 'blur', 'channelsort', 'channelthreshold', 'colorize',
-    'greyscale', 'huerotate', 'pixelsort', 'randomdither', 'reblend',
+    'greyscale', 'huerotate', 'pixelsort', 'randomdither', 'reblend', 'slicer',
     'spotlight', 'threshold', 'vignette',
   ]);
   for (const effect of EFFECTS) {
@@ -1116,4 +1116,165 @@ test('channel sort shares the run rules with pixel sort', () => {
     return resets;
   };
   assert.equal(runs(200, 25), runs(400, 25), 'same share, same structure at either size');
+});
+
+// ---------- slicer ----------
+
+/** Content with no magenta in it, so the gap colour is unambiguous. */
+const slicable = (x, y) => [20 + ((x * 7) % 200), 40 + ((y * 5) % 180), 60, 255];
+
+const GAP = '#ff00ff';
+
+const slicerParams = (over = {}) => ({
+  direction: 'horizontal', size: 10, jitter: 0, shift: 30,
+  transparent: false, background: GAP, ...over,
+});
+
+/**
+ * Recover each line's displacement by counting gap pixels. A band shifted right
+ * leaves its gap on the left and vice versa, so the run of fill at either end
+ * gives the signed offset.
+ */
+function offsets(img, vertical = false) {
+  const lines = vertical ? img.width : img.height;
+  const length = vertical ? img.height : img.width;
+  const isGap = (i, l) => {
+    const [r, g, b] = vertical ? at(img, l, i) : at(img, i, l);
+    return r === 255 && g === 0 && b === 255;
+  };
+
+  return Array.from({ length: lines }, (_, l) => {
+    let lead = 0;
+    while (lead < length && isGap(lead, l)) lead++;
+    if (lead > 0) return lead;
+    let trail = 0;
+    while (trail < length && isGap(length - 1 - trail, l)) trail++;
+    return -trail;
+  });
+}
+
+test('slicer with no shift leaves the image untouched', () => {
+  const img = image(60, 60, slicable);
+  const copy = [...img.data];
+  getEffect('slicer').apply(img, { params: slicerParams({ shift: 0 }), rng: rng() });
+  assert.deepEqual([...img.data], copy);
+});
+
+test('slicer shifts whole bands together', () => {
+  const img = image(80, 60, slicable);
+  getEffect('slicer').apply(img, { params: slicerParams(), rng: rng() });
+
+  const found = offsets(img);
+  assert.ok(found.some((o) => o !== 0), 'something should have moved');
+
+  // Every boundary — a row whose offset differs from the one above — must fall
+  // on a multiple of the band size when jitter is off.
+  const bandSize = Math.round((60 * 10) / 100);
+  for (let y = 1; y < found.length; y++) {
+    if (found[y] !== found[y - 1]) {
+      assert.equal(y % bandSize, 0, `band boundary at row ${y} is not a multiple of ${bandSize}`);
+    }
+  }
+});
+
+test('slicer jitter makes the bands uneven', () => {
+  const img = image(80, 120, slicable);
+  getEffect('slicer').apply(img, { params: slicerParams({ size: 10, jitter: 80 }), rng: rng() });
+
+  const found = offsets(img);
+  const bandSize = Math.round((120 * 10) / 100);
+  const boundaries = [];
+  for (let y = 1; y < found.length; y++) if (found[y] !== found[y - 1]) boundaries.push(y);
+
+  assert.ok(boundaries.length > 2, 'expected several bands');
+  assert.ok(
+    boundaries.some((y) => y % bandSize !== 0),
+    `jitter should break the regular grid, boundaries: ${boundaries}`,
+  );
+});
+
+test('slicer keeps each band intact, just moved', () => {
+  const original = image(80, 60, slicable);
+  const img = image(80, 60, slicable);
+  getEffect('slicer').apply(img, { params: slicerParams(), rng: rng() });
+
+  const found = offsets(img);
+  for (let y = 0; y < 60; y++) {
+    const shift = found[y];
+    for (let x = 0; x < 80; x++) {
+      const source = x - shift;
+      if (source < 0 || source >= 80) continue;   // that is gap, checked elsewhere
+      assert.deepEqual(at(img, x, y), at(original, source, y), `row ${y} scrambled at x=${x}`);
+    }
+  }
+});
+
+test('slicer gaps are transparent when asked, and filled when not', () => {
+  const clear = image(60, 60, slicable);
+  getEffect('slicer').apply(clear, { params: slicerParams({ transparent: true }), rng: rng() });
+  let sawGap = false;
+  for (let i = 0; i < clear.data.length; i += 4) {
+    if (clear.data[i + 3] === 0) { sawGap = true; break; }
+  }
+  assert.ok(sawGap, 'transparent gaps should punch through');
+
+  const filled = image(60, 60, slicable);
+  getEffect('slicer').apply(filled, { params: slicerParams({ transparent: false }), rng: rng() });
+  for (let i = 0; i < filled.data.length; i += 4) {
+    assert.equal(filled.data[i + 3], 255, 'a filled slicer should leave nothing transparent');
+  }
+  const found = offsets(filled);
+  const shifted = found.findIndex((o) => o > 0);
+  assert.ok(shifted >= 0, 'need a right-shifted band to inspect');
+  assert.deepEqual(at(filled, 0, shifted), [255, 0, 255, 255], 'the gap takes the chosen colour');
+});
+
+test('slicer band size controls how many bands there are', () => {
+  const count = (size) => {
+    const img = image(80, 120, slicable);
+    getEffect('slicer').apply(img, { params: slicerParams({ size, jitter: 0 }), rng: rng() });
+    const found = offsets(img);
+    let boundaries = 0;
+    for (let y = 1; y < found.length; y++) if (found[y] !== found[y - 1]) boundaries++;
+    return boundaries;
+  };
+  assert.ok(count(4) > count(25), 'smaller bands should give more of them');
+});
+
+test('slicer works along either axis, and the two differ', () => {
+  const horizontal = image(80, 80, slicable);
+  getEffect('slicer').apply(horizontal, { params: slicerParams({ direction: 'horizontal' }), rng: rng() });
+
+  const vertical = image(80, 80, slicable);
+  getEffect('slicer').apply(vertical, { params: slicerParams({ direction: 'vertical' }), rng: rng() });
+
+  assert.notDeepEqual([...horizontal.data], [...vertical.data]);
+
+  // Vertical bands are columns displaced up and down.
+  const columnOffsets = offsets(vertical, true);
+  assert.ok(columnOffsets.some((o) => o !== 0), 'columns should have moved');
+
+  // ...and a horizontal slice leaves whole rows intact vertically.
+  const rowOffsets = offsets(horizontal);
+  assert.ok(rowOffsets.some((o) => o !== 0), 'rows should have moved');
+});
+
+test('slicer follows the seed and varies with it', () => {
+  const run = (seed) => {
+    const img = image(60, 60, slicable);
+    getEffect('slicer').apply(img, { params: slicerParams(), rng: createRng(seed) });
+    return [...img.data].join(',');
+  };
+  assert.equal(run('alpha'), run('alpha'));
+  assert.notEqual(run('alpha'), run('beta'));
+});
+
+test('slicer shift is a share of the line, not a pixel count', () => {
+  const widest = (width) => {
+    const img = image(width, 40, slicable);
+    getEffect('slicer').apply(img, { params: slicerParams({ shift: 25, jitter: 0 }), rng: rng() });
+    return Math.max(...offsets(img).map(Math.abs)) / width;
+  };
+  // The largest displacement should be the same fraction of either width.
+  assert.ok(Math.abs(widest(200) - widest(400)) < 0.02, 'shift should scale with the line');
 });
