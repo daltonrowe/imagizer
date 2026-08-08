@@ -24,6 +24,7 @@
     <div id="layerHost" class="layer-host">
       <canvas id="layer" class="layer"></canvas>
     </div>
+    <canvas id="preview" class="preview" hidden></canvas>
     <div id="frame" class="frame" aria-hidden="true"></div>
 
     <div id="empty" class="empty">
@@ -34,7 +35,16 @@
     </div>
   </section>
 
-  <section class="controls" aria-label="Crop settings">
+  <section class="controls" aria-label="Editor settings">
+    <div class="tabs" role="tablist">
+      <button class="tab" id="tabCrop" type="button" role="tab" aria-selected="true" aria-controls="paneCrop">Crop</button>
+      <button class="tab" id="tabEffects" type="button" role="tab" aria-selected="false" aria-controls="paneEffects">
+        Effects <span id="chainCount" class="count" hidden></span>
+      </button>
+    </div>
+
+    <div class="panes">
+    <div class="pane" id="paneCrop" role="tabpanel" aria-labelledby="tabCrop">
     <div class="row">
       <label class="row-label" for="presets">Crop size</label>
       <div class="presets" id="presets" role="group" aria-label="Crop size presets"></div>
@@ -60,7 +70,35 @@
         <button id="reset" class="btn btn-quiet" type="button">Reset</button>
       </div>
     </div>
+    </div><!-- /paneCrop -->
 
+    <div class="pane" id="paneEffects" role="tabpanel" aria-labelledby="tabEffects" hidden>
+      <div class="row row-inline">
+        <div class="field">
+          <label class="visually-hidden" for="addEffect">Add an effect</label>
+          <select id="addEffect"></select>
+        </div>
+        <button id="randomizeChain" class="btn" type="button" title="Build a random chain of 2-5 effects">Randomize</button>
+        <button id="clearChain" class="btn btn-icon" type="button" title="Remove all effects" aria-label="Remove all effects">&times;</button>
+      </div>
+
+      <ol id="chain" class="chain"></ol>
+      <p id="chainEmpty" class="hint hint-empty">No effects yet. Add one, or hit Randomize for a chain of 2&ndash;5.</p>
+
+      <details class="json" id="jsonPanel">
+        <summary>Chain JSON</summary>
+        <textarea id="json" class="json-text" rows="7" spellcheck="false" autocapitalize="off"
+                  autocorrect="off" aria-label="Effect chain as JSON"></textarea>
+        <div class="row-inline json-actions">
+          <button id="jsonCopy" class="btn" type="button">Copy</button>
+          <button id="jsonDownload" class="btn" type="button">Download</button>
+          <button id="jsonApply" class="btn btn-primary" type="button">Apply</button>
+        </div>
+      </details>
+    </div><!-- /paneEffects -->
+    </div><!-- /panes -->
+
+    <div class="footer">
     <div class="row row-inline row-seed">
       <label class="inline-label" for="seed">Seed</label>
       <input id="seed" class="seed-input" type="text" autocomplete="off" autocapitalize="characters"
@@ -80,6 +118,7 @@
     </div>
 
     <p class="hint">Drag to position &middot; pinch to zoom &middot; double&#8209;tap to reset</p>
+    </div><!-- /footer -->
   </section>
 </main>
 

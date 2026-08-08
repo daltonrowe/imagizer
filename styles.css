@@ -165,6 +165,17 @@ body {
 
 .stage.empty-state .frame { display: none; }
 
+/* Effect output, drawn over the frame at exactly the frame's position. */
+.preview {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+.preview[hidden] { display: none; }
+
 .empty {
   position: absolute;
   inset: 0;
@@ -189,6 +200,11 @@ body {
 
 /* ---------- controls ---------- */
 
+/*
+ * Three bands: tabs and the footer stay put while the panes scroll between
+ * them. A randomised chain plus the JSON panel is far taller than a phone, and
+ * the export button has to stay reachable without hunting for it.
+ */
 .controls {
   flex: 0 1 auto;
   display: flex;
@@ -197,10 +213,225 @@ body {
   padding: 10px 14px calc(10px + var(--safe-b));
   border-top: 1px solid var(--line);
   background: var(--panel);
+  overflow: hidden;
+}
+
+.panes {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.footer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .row { display: flex; flex-direction: column; gap: 6px; }
+
+/* ---------- tabs ---------- */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+
+.tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.tab[aria-selected="true"] {
+  background: color-mix(in srgb, var(--accent) 22%, var(--panel));
+  color: var(--text);
+}
+
+.count {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.count[hidden] { display: none; }
+
+/* Never shrink: the pane scrolls inside .panes rather than squashing its
+   content out over the footer. */
+.pane {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 2px;
+}
+
+.pane[hidden] { display: none; }
+
+/* ---------- effect chain ---------- */
+
+.chain {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chain:empty { display: none; }
+.hint-empty[hidden] { display: none; }
+
+.effect {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+
+.effect.off { opacity: 0.5; }
+
+/* The summary is a child of the inner <details>, not of .effect itself. */
+.effect summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 4px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 14px;
+}
+
+.effect summary::-webkit-details-marker { display: none; }
+
+.effect summary::before {
+  content: "›";
+  flex: 0 0 auto;
+  width: 16px;
+  color: var(--muted);
+  font-size: 15px;
+  text-align: center;
+  transition: transform 120ms ease;
+}
+
+.effect details[open] > summary::before { transform: rotate(90deg); }
+
+.effect-index {
+  flex: 0 0 auto;
+  width: 18px;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.effect-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.effect-tools { display: flex; gap: 2px; flex: 0 0 auto; }
+
+.tool {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tool:hover:not(:disabled) { background: var(--line); color: var(--text); }
+.tool:disabled { opacity: 0.3; cursor: default; }
+.tool[aria-pressed="false"] { color: var(--warn); }
+
+.params {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 10px 10px;
+  border-top: 1px solid var(--line);
+}
+
+.param { display: flex; flex-direction: column; gap: 4px; }
+
+.param-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.param-value { font-variant-numeric: tabular-nums; color: var(--text); }
+
+.param-toggle {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.param-toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
+
+/* ---------- JSON panel ---------- */
+
+.json { border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+
+.json > summary {
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.json[open] > summary { border-bottom: 1px solid var(--line); }
+
+.json-text {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.json-actions { padding: 0 10px 10px; }
+.json-actions .btn { flex: 1; padding: 8px 10px; font-size: 13px; }
 
 .row-inline {
   display: flex;

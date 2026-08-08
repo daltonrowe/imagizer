@@ -2,6 +2,16 @@ import { loadImageFile, hasTransparency } from './image.js';
 import { createCropper, MIN_ZOOM, MAX_ZOOM } from './cropper.js';
 import { loadSettings, saveSettings, clampSize, MIN_SIZE, MAX_SIZE } from './storage.js';
 import { createRng, randomSeed, normalizeSeed } from './random.js';
+import {
+  EFFECTS,
+  getEffect,
+  createItem,
+  normalizeChain,
+  runChain,
+  randomChain,
+  chainToJSON,
+  chainFromJSON,
+} from './effects/index.js';
 
 const PRESETS = [
   { label: 'Square', w: 1080, h: 1080 },
@@ -31,6 +41,22 @@ const el = {
   reset: document.getElementById('reset'),
   seed: document.getElementById('seed'),
   randomize: document.getElementById('randomize'),
+  preview: document.getElementById('preview'),
+  tabCrop: document.getElementById('tabCrop'),
+  tabEffects: document.getElementById('tabEffects'),
+  paneCrop: document.getElementById('paneCrop'),
+  paneEffects: document.getElementById('paneEffects'),
+  chainCount: document.getElementById('chainCount'),
+  chainList: document.getElementById('chain'),
+  chainEmpty: document.getElementById('chainEmpty'),
+  addEffect: document.getElementById('addEffect'),
+  randomizeChain: document.getElementById('randomizeChain'),
+  clearChain: document.getElementById('clearChain'),
+  json: document.getElementById('json'),
+  jsonPanel: document.getElementById('jsonPanel'),
+  jsonCopy: document.getElementById('jsonCopy'),
+  jsonDownload: document.getElementById('jsonDownload'),
+  jsonApply: document.getElementById('jsonApply'),
   format: document.getElementById('format'),
   exportBtn: document.getElementById('export'),
   pick: document.getElementById('pick'),
@@ -54,25 +80,16 @@ const cropper = createCropper({
 // ---------- seeded randomness ----------
 
 /**
- * The root generator for the current seed. Effects take a named stream from it
- * — `rng.fork('grain')`, `rng.fork('glitch')` — so each stays reproducible and
- * independent of the others. Anything that needs randomness draws from here
- * rather than Math.random(), which is what makes a look shareable by seed.
+ * The root generator for the current seed. Each effect takes a named stream
+ * from it, so the whole chain is reproducible and independent stage by stage.
+ * Nothing in the app calls Math.random() — that is what makes a look shareable.
  */
 let rng = createRng(settings.seed);
 
 /** Re-run everything downstream of the seed. */
 function reseed() {
   rng = createRng(settings.seed);
-  applyEffects();
-}
-
-/**
- * Where the effect stack will run. It is a no-op today — nothing draws from the
- * rng yet — so changing the seed is currently invisible by design.
- */
-function applyEffects() {
-  cropper.render();
+  schedulePreview();
 }
 
 function applySeed(next, { syncInput = true } = {}) {
@@ -90,8 +107,322 @@ el.seed.addEventListener('focus', () => el.seed.select());
 el.seed.addEventListener('blur', () => { el.seed.value = settings.seed; });
 el.randomize.addEventListener('click', () => applySeed(randomSeed()));
 
-// Debug seam: lets a console session or a test inspect the live generator.
-globalThis.imagizer = { getRng: () => rng, getSettings: () => ({ ...settings }) };
+// Debug seam: lets a console session or a test inspect the live state.
+globalThis.imagizer = {
+  getRng: () => rng,
+  getSettings: () => ({ ...settings }),
+  getChain: () => structuredClone(chain),
+};
+
+// ---------- effect chain ----------
+
+let chain = normalizeChain(settings.chain);
+
+/**
+ * Push the chain everywhere it needs to go: storage, the list UI, the JSON
+ * panel and the preview. Everything that mutates the chain ends here, so the
+ * four views can never drift apart.
+ */
+function updateChain(next, { rebuild = true } = {}) {
+  chain = normalizeChain(next);
+  settings.chain = chain;
+  saveSettings(settings);
+  if (rebuild) renderChain();
+  syncChainMeta();
+  schedulePreview();
+}
+
+function syncChainMeta() {
+  const active = chain.filter((item) => item.enabled !== false).length;
+  el.chainCount.hidden = active === 0;
+  el.chainCount.textContent = String(active);
+  el.chainEmpty.hidden = chain.length > 0;
+  // Leave the JSON alone while it is being edited, or typing would fight back.
+  if (document.activeElement !== el.json) el.json.value = currentJSON();
+}
+
+function currentJSON() {
+  return chainToJSON({
+    chain,
+    seed: settings.seed,
+    crop: { w: settings.cropW, h: settings.cropH },
+  });
+}
+
+function renderChain() {
+  el.chainList.replaceChildren(...chain.map((item, index) => renderChainItem(item, index)));
+}
+
+function renderChainItem(item, index) {
+  const effect = getEffect(item.id);
+  const enabled = item.enabled !== false;
+
+  const li = document.createElement('li');
+  li.className = `effect${enabled ? '' : ' off'}`;
+
+  const details = document.createElement('details');
+  const summary = document.createElement('summary');
+  summary.innerHTML = `
+    <span class="effect-index">${index + 1}</span>
+    <span class="effect-name">${effect.label}</span>`;
+
+  const tools = document.createElement('span');
+  tools.className = 'effect-tools';
+  tools.append(
+    tool('↑', 'Move up', index === 0, () => move(index, -1)),
+    tool('↓', 'Move down', index === chain.length - 1, () => move(index, 1)),
+    tool(enabled ? '◉' : '○', enabled ? 'Disable' : 'Enable', false, () => setEnabled(index, !enabled), enabled),
+    tool('✕', 'Remove', false, () => remove(index)),
+  );
+  summary.append(tools);
+  details.append(summary, renderParams(effect, item, index));
+  li.append(details);
+  return li;
+}
+
+function tool(glyph, title, disabled, onClick, pressed) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'tool';
+  button.textContent = glyph;
+  button.title = title;
+  button.setAttribute('aria-label', title);
+  if (pressed !== undefined) button.setAttribute('aria-pressed', String(pressed));
+  button.disabled = disabled;
+  button.addEventListener('click', (event) => {
+    // Without this the click also toggles the <details> the button sits in.
+    event.preventDefault();
+    event.stopPropagation();
+    onClick();
+  });
+  return button;
+}
+
+function renderParams(effect, item, index) {
+  const wrap = document.createElement('div');
+  wrap.className = 'params';
+
+  for (const spec of effect.params) {
+    const value = item.params[spec.key];
+
+    if (spec.type === 'toggle') {
+      const label = document.createElement('label');
+      label.className = 'param param-toggle';
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = Boolean(value);
+      input.addEventListener('change', () => setParam(index, spec.key, input.checked));
+      label.append(input, document.createTextNode(spec.label));
+      wrap.append(label);
+      continue;
+    }
+
+    const field = document.createElement('div');
+    field.className = 'param';
+    const head = document.createElement('div');
+    head.className = 'param-head';
+    const readout = document.createElement('span');
+    readout.className = 'param-value';
+    head.append(Object.assign(document.createElement('span'), { textContent: spec.label }), readout);
+    field.append(head);
+
+    if (spec.type === 'select') {
+      readout.textContent = '';
+      const select = document.createElement('select');
+      for (const option of spec.options) {
+        select.append(new Option(option.label, option.value, false, option.value === value));
+      }
+      select.addEventListener('change', () => setParam(index, spec.key, select.value));
+      field.append(select);
+    } else {
+      const input = document.createElement('input');
+      input.type = 'range';
+      input.className = 'slider';
+      Object.assign(input, { min: spec.min, max: spec.max, step: spec.step, value });
+      readout.textContent = formatValue(value, spec);
+      input.addEventListener('input', () => {
+        readout.textContent = formatValue(Number(input.value), spec);
+        // Skip the rebuild: recreating the slider mid-drag drops the gesture.
+        setParam(index, spec.key, Number(input.value), { rebuild: false });
+      });
+      field.append(input);
+    }
+    wrap.append(field);
+  }
+  return wrap;
+}
+
+const formatValue = (value, spec) => `${value}${spec.unit ?? ''}`;
+
+function setParam(index, key, value, options) {
+  const next = chain.map((item, i) => (
+    i === index ? { ...item, params: { ...item.params, [key]: value } } : item
+  ));
+  updateChain(next, options);
+}
+
+function setEnabled(index, enabled) {
+  updateChain(chain.map((item, i) => (i === index ? { ...item, enabled } : item)));
+}
+
+function remove(index) {
+  updateChain(chain.filter((_, i) => i !== index));
+}
+
+function move(index, delta) {
+  const target = index + delta;
+  if (target < 0 || target >= chain.length) return;
+  const next = [...chain];
+  [next[index], next[target]] = [next[target], next[index]];
+  updateChain(next);
+}
+
+el.addEffect.addEventListener('change', () => {
+  const id = el.addEffect.value;
+  el.addEffect.value = '';
+  if (!id) return;
+  updateChain([...chain, createItem(id)]);
+});
+
+el.randomizeChain.addEventListener('click', () => {
+  // A fresh generator, not the art seed: the button has to give something new
+  // each press, while the chain it produces is captured as data in the JSON.
+  updateChain(randomChain(createRng(randomSeed())));
+  showEffectsTab();
+});
+
+el.clearChain.addEventListener('click', () => {
+  if (!chain.length) return;
+  updateChain([]);
+});
+
+// ---------- chain JSON ----------
+
+el.jsonCopy.addEventListener('click', async () => {
+  const text = currentJSON();
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Chain JSON copied.');
+  } catch {
+    // Clipboard needs a secure context and permission; selecting the text is
+    // the reliable fallback on iOS.
+    el.json.value = text;
+    el.json.focus();
+    el.json.select();
+    toast('Copy blocked — the JSON is selected, copy it manually.');
+  }
+});
+
+el.jsonDownload.addEventListener('click', () => {
+  const blob = new Blob([currentJSON()], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  el.download.href = url;
+  el.download.download = `imagizer-${settings.seed.replace(/\s+/g, '-')}.json`;
+  el.download.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+});
+
+el.jsonApply.addEventListener('click', () => {
+  try {
+    const preset = chainFromJSON(el.json.value);
+    if (preset.seed) applySeed(preset.seed);
+    if (preset.crop) applyCrop(preset.crop.w, preset.crop.h);
+    updateChain(preset.chain);
+    toast(preset.dropped
+      ? `Applied — ${preset.dropped} unknown effect${preset.dropped > 1 ? 's' : ''} skipped.`
+      : 'Chain applied.');
+  } catch (error) {
+    toast(error.message);
+  }
+});
+
+// ---------- tabs ----------
+
+function showTab(effects) {
+  el.tabCrop.setAttribute('aria-selected', String(!effects));
+  el.tabEffects.setAttribute('aria-selected', String(effects));
+  el.paneCrop.hidden = effects;
+  el.paneEffects.hidden = !effects;
+}
+
+const showEffectsTab = () => showTab(true);
+el.tabCrop.addEventListener('click', () => showTab(false));
+el.tabEffects.addEventListener('click', () => showTab(true));
+
+// ---------- preview ----------
+
+/**
+ * The preview renders at screen resolution rather than crop resolution: a
+ * 1080x1080 export is 1.2M pixels through five effects, which is a visible
+ * stall on a phone for something the screen shows at a quarter of the size.
+ * The export always re-runs the chain at full size.
+ */
+const PREVIEW_MAX_EDGE = 1400;
+let previewTimer = 0;
+
+/** Re-render shortly; the old frame stays up meanwhile. */
+function schedulePreview() {
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(renderPreview, 90);
+}
+
+/**
+ * For changes that move or resize the frame. The existing preview is the wrong
+ * shape or in the wrong place, so it has to go rather than linger misaligned.
+ */
+function invalidatePreview() {
+  el.preview.hidden = true;
+  schedulePreview();
+}
+
+function renderPreview() {
+  const frame = cropper.getFrame();
+  if (!cropper.hasSource() || !frame || !chain.some((item) => item.enabled !== false)) {
+    el.preview.hidden = true;
+    return;
+  }
+
+  // Cap the working size by the crop itself, so a small crop is never upscaled
+  // for the preview and then downscaled again by the browser.
+  const density = Math.min(window.devicePixelRatio || 1, 2);
+  const scale = Math.min(
+    settings.cropW / frame.width,
+    PREVIEW_MAX_EDGE / Math.max(frame.width, frame.height),
+    density,
+  );
+  const width = Math.max(1, Math.round(frame.width * Math.max(scale, 0.5)));
+  const height = Math.max(1, Math.round(frame.height * Math.max(scale, 0.5)));
+
+  el.preview.width = width;
+  el.preview.height = height;
+  const ctx = el.preview.getContext('2d', { willReadFrequently: true });
+  cropper.drawCrop(ctx, width, height);
+
+  const image = ctx.getImageData(0, 0, width, height);
+  runChain(image, chain, rng);
+  ctx.putImageData(image, 0, 0);
+
+  positionPreview(frame);
+  el.preview.hidden = false;
+}
+
+function positionPreview(frame) {
+  el.preview.style.width = `${frame.width}px`;
+  el.preview.style.height = `${frame.height}px`;
+  el.preview.style.transform = `translate(${frame.left}px, ${frame.top}px)`;
+}
+
+// While the photo is being moved, show the untouched image — re-running the
+// chain on every pointer move would lag the drag, and positioning is easier
+// against the real photo anyway.
+el.stage.addEventListener('pointerdown', () => {
+  if (!el.preview.hidden) el.preview.hidden = true;
+  clearTimeout(previewTimer);
+}, true);
+
+for (const event of ['pointerup', 'pointercancel', 'wheel']) {
+  el.stage.addEventListener(event, schedulePreview, true);
+}
 
 // ---------- crop size ----------
 
@@ -118,6 +449,7 @@ function applyCrop(w, h, { syncInputs = true } = {}) {
   renderPresets();
   cropper.setCrop(settings.cropW, settings.cropH);
   updateReadout(cropper.getStats());
+  invalidatePreview();
 }
 
 function readSizeInputs() {
@@ -144,8 +476,14 @@ el.swap.addEventListener('click', () => applyCrop(settings.cropH, settings.cropW
 
 // ---------- zoom ----------
 
-el.zoom.addEventListener('input', () => cropper.setZoom(Number(el.zoom.value)));
-el.reset.addEventListener('click', () => cropper.reset());
+el.zoom.addEventListener('input', () => {
+  cropper.setZoom(Number(el.zoom.value));
+  invalidatePreview();
+});
+el.reset.addEventListener('click', () => {
+  cropper.reset();
+  invalidatePreview();
+});
 
 function updateReadout(stats) {
   if (!stats) {
@@ -161,6 +499,10 @@ function updateReadout(stats) {
   el.quality.textContent = stats.upscaled
     ? `Upscaled — ${Math.round(stats.sampled.w)}×${Math.round(stats.sampled.h)} source px`
     : `${stats.source.w}×${stats.source.h} source`;
+
+  // Keep the effect preview glued to the frame as it moves or resizes.
+  const frame = cropper.getFrame();
+  if (frame && !el.preview.hidden) positionPreview(frame);
 }
 
 // ---------- loading a photo ----------
@@ -187,6 +529,7 @@ async function openFile(file) {
     toast(sourceHasAlpha && settings.format === 'image/jpeg'
       ? 'This photo has transparency — switch to PNG to keep it.'
       : '');
+    invalidatePreview();
   } catch (error) {
     toast(error.message || "Couldn't open that photo.");
   }
@@ -225,10 +568,20 @@ el.exportBtn.addEventListener('click', async () => {
   try {
     const type = settings.format;
     const jpeg = type === 'image/jpeg';
-    const blob = await cropper.toBlob(type, jpeg ? JPEG_QUALITY : undefined, {
-      // PNG keeps the alpha channel; JPEG cannot, so flatten predictably.
-      background: jpeg ? JPEG_MATTE : null,
-    });
+
+    // PNG keeps the alpha channel; JPEG cannot, so flatten predictably.
+    const canvas = cropper.toCanvas({ background: jpeg ? JPEG_MATTE : null });
+
+    // The chain runs again here at full crop resolution — the preview was
+    // rendered at screen size, so this is the authoritative render.
+    if (chain.some((item) => item.enabled !== false)) {
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      runChain(image, chain, rng);
+      ctx.putImageData(image, 0, 0);
+    }
+
+    const blob = await canvasToBlob(canvas, type, jpeg ? JPEG_QUALITY : undefined);
     const name = `${sourceName}-${settings.cropW}x${settings.cropH}.${jpeg ? 'jpg' : 'png'}`;
     await deliver(blob, name, type);
   } catch (error) {
@@ -237,6 +590,16 @@ el.exportBtn.addEventListener('click', async () => {
     el.exportBtn.disabled = false;
   }
 });
+
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error('Export failed.'))),
+      type,
+      quality,
+    );
+  });
+}
 
 async function deliver(blob, name, type) {
   const file = new File([blob], name, { type });
@@ -276,7 +639,10 @@ function toast(message, duration = 2600) {
   if (duration > 0) toastTimer = setTimeout(() => { el.toast.hidden = true; }, duration);
 }
 
-const onResize = () => cropper.resize();
+const onResize = () => {
+  cropper.resize();
+  invalidatePreview();
+};
 if (typeof ResizeObserver === 'function') {
   new ResizeObserver(onResize).observe(el.stage);
 } else {
@@ -298,6 +664,13 @@ el.cropH.value = settings.cropH;
 el.format.value = settings.format;
 el.seed.value = settings.seed;
 el.stage.classList.add('empty-state');
+el.addEffect.replaceChildren(
+  new Option('Add effect…', ''),
+  ...EFFECTS.map((effect) => new Option(effect.label, effect.id)),
+);
 renderPresets();
+renderChain();
+syncChainMeta();
+showTab(false);
 cropper.setCrop(settings.cropW, settings.cropH);
 saveSettings(settings); // pin the defaults on a first visit

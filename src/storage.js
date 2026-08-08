@@ -40,7 +40,7 @@ export function loadSettings() {
   }
   // A first-time visitor gets their own seed rather than everyone's shared one.
   if (!stored || typeof stored !== 'object') {
-    return { ...DEFAULTS, seed: randomSeed(), version: VERSION };
+    return { ...DEFAULTS, seed: randomSeed(), chain: [], version: VERSION };
   }
 
   // Settings saved before the default changed adopt the new one; a format
@@ -52,6 +52,9 @@ export function loadSettings() {
     cropH: clampSize(stored.cropH, DEFAULTS.cropH),
     format: !stale && stored.format === 'image/jpeg' ? 'image/jpeg' : DEFAULTS.format,
     seed: normalizeSeed(stored.seed) || randomSeed(),
+    // Validated by the effect registry on load, which is the only thing that
+    // knows which effects and params currently exist.
+    chain: Array.isArray(stored.chain) ? stored.chain : [],
     version: VERSION,
   };
 }

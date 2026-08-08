@@ -3,8 +3,9 @@
 An in-browser image effect editor. Everything runs locally — photos are decoded,
 cropped and exported on-device, and nothing is ever uploaded.
 
-This first slice covers the input stage: **take a photo from an iPhone, crop it to
-a chosen pixel size, and position the photo inside that crop.**
+Take a photo from an iPhone, crop and position it at an exact pixel size, run it
+through a chain of effects, and export it — with a seed that makes any result
+reproducible.
 
 ## Running it
 
@@ -13,7 +14,7 @@ HTTP rather than opened from the filesystem:
 
 ```sh
 npm start        # or: python3 -m http.server 8000
-npm test         # unit tests for the seeded generator (node --test)
+npm test         # unit tests for the generator and every effect (node --test)
 ```
 
 Then open `http://localhost:8000`. To try it on a phone, serve it over your LAN or
@@ -44,6 +45,59 @@ any static host (GitHub Pages, Netlify, …) — the whole app is static files.
 A badge in the header shows the source resolution, and turns amber when the crop
 asks for more pixels than the photo can supply at the current zoom.
 
+## Effects
+
+An effect chain runs on the cropped region: the output of each effect is the
+input of the next. Five to start with — **Blur**, **Greyscale**, **Pixel Sort**,
+**Threshold BW** and **Atkinson Dither** — each with its own settings.
+
+The chain is plain data, `[{ id, enabled, params }, ...]`, which is what makes it
+storable, shareable and undoable. Reorder with the arrows, mute a stage without
+deleting it, or drop one entirely. **Randomize** builds a chain of 2–5 distinct
+effects with randomised settings.
+
+Two details make randomised chains look deliberate rather than arbitrary. Each
+effect declares a `stage`, and a random chain is sorted by it — blur softens the
+source, pixel sort works on real tones, threshold and dither finish. And each
+param declares a `random` hint narrower than its slider range: blur goes to a
+radius of 40, but a random chain that reaches for it just returns mush.
+
+Effects run twice at different resolutions. The preview renders at screen size,
+because a 1080×1080 crop is 1.2M pixels through five effects and that stalls a
+phone for something displayed at a quarter of the size; the export re-runs the
+chain at full crop resolution and is authoritative. Dither and pixel sort are
+resolution-dependent, so expect the export to be finer-grained than the preview.
+
+### Chain JSON
+
+The **Chain JSON** panel serialises the chain, the seed and the crop size as a
+preset you can copy, download, or paste back in:
+
+```json
+{
+  "format": "imagizer.chain",
+  "version": 1,
+  "seed": "golden hour",
+  "crop": { "width": 1080, "height": 1080 },
+  "effects": [
+    { "id": "blur", "params": { "radius": 6 } },
+    { "id": "atkinson", "params": { "levels": 2, "scale": 2 } }
+  ]
+}
+```
+
+Chain plus seed is everything needed to reproduce a look — a round trip through
+JSON renders pixel-identical output. Importing clamps out-of-range params, drops
+effects it doesn't recognise and says how many, so a preset from a newer version
+degrades instead of failing.
+
+### Adding an effect
+
+Drop a module in `src/effects/` exporting `{ id, label, stage, params, apply }`
+and register it in `src/effects/index.js`. `apply(image, { params, rng })` gets a
+`{ data, width, height }` image to mutate in place — the same shape as ImageData
+but not the constructor, so effects are testable in Node without a DOM.
+
 ## Seeded randomness
 
 Effects that involve randomness — grain, glitch, scatter, dithering — draw from a
@@ -52,11 +106,8 @@ the same seed gives the same result on any device, in any session. The seed is
 free text (type `golden hour` if you like), persists in `localStorage`, and the
 🎲 button rolls a fresh readable one.
 
-Nothing draws from the generator yet, so changing the seed is currently invisible.
-The plumbing is in place for the effects to come.
-
-Effects should never call `Math.random()`. They take a **named stream** from the
-root generator instead:
+Effects never call `Math.random()`. They take a **named stream** from the root
+generator instead:
 
 ```js
 const grain = rng.fork('grain');
@@ -83,6 +134,7 @@ styles.css      layout, including the phone/landscape/desktop arrangements
 src/app.js      wiring: presets, inputs, seed, file loading, export
 src/cropper.js  pan/zoom geometry and the crop render
 src/image.js    File -> upright, size-capped working canvas
+src/effects/    one module per effect, plus the registry and chain runner
 src/random.js   seeded, forkable deterministic generator
 src/storage.js  localStorage with private-mode-safe fallbacks
 test/           unit tests (node --test)
@@ -94,9 +146,10 @@ That means the framing survives rotating the phone, resizing the window and
 changing the crop size, and it maps directly onto the `drawImage()` source rect
 used for export.
 
-## Next
+## Pipeline
 
-The effects stage plugs in between `src/image.js` and the export: the working
-canvas is the input, `rng.fork('<effect>')` supplies the randomness, and
-`cropper.toBlob()` is the last step in the pipeline. `applyEffects()` in
-`src/app.js` is where the stack will run — it already re-runs on a seed change.
+    File -> upright working canvas -> crop -> effect chain -> PNG/JPEG
+            src/image.js             cropper  src/effects    export
+
+Preview and export share every step; they differ only in the pixel size the crop
+is rendered at.

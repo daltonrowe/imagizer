@@ -270,31 +270,44 @@ export function createCropper({ stage, layerHost, frame, onChange }) {
   }
 
   /**
-   * Render the framed region at the exact requested pixel size.
+   * Draw the framed region into a context at the given size.
    *
-   * The canvas keeps its alpha channel, so transparency in the photo survives
-   * into a PNG export. Pass `background` for formats that cannot store alpha —
-   * without it browsers flatten JPEG onto black, which is rarely what anyone
-   * wants. An opaque photo covers the fill completely either way.
+   * The size is a parameter because the preview renders at screen resolution
+   * while the export renders at full crop size — same framing, different pixel
+   * counts, one code path.
+   *
+   * Alpha is preserved, so transparency in the photo survives into a PNG.
+   * Pass `background` for formats that cannot store alpha: without it browsers
+   * flatten JPEG onto black. An opaque photo covers the fill completely.
    */
-  function toCanvas({ background = null } = {}) {
+  function drawCrop(ctx, width, height, { background = null } = {}) {
     if (!source) throw new Error('No photo loaded.');
     const view = viewSize();
     const start = origin();
 
-    const out = document.createElement('canvas');
-    out.width = crop.w;
-    out.height = crop.h;
-
-    const ctx = out.getContext('2d');
+    ctx.clearRect(0, 0, width, height);
     if (background) {
       ctx.fillStyle = background;
-      ctx.fillRect(0, 0, crop.w, crop.h);
+      ctx.fillRect(0, 0, width, height);
     }
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(source, start.x, start.y, view.w, view.h, 0, 0, crop.w, crop.h);
+    ctx.drawImage(source, start.x, start.y, view.w, view.h, 0, 0, width, height);
+  }
+
+  /** Render the framed region at the exact requested pixel size. */
+  function toCanvas({ background = null, width = crop.w, height = crop.h } = {}) {
+    const out = document.createElement('canvas');
+    out.width = width;
+    out.height = height;
+    drawCrop(out.getContext('2d'), width, height, { background });
     return out;
+  }
+
+  /** Where the crop frame sits within the stage, in CSS pixels. */
+  function getFrame() {
+    if (!layout) return null;
+    return { left: layout.left, top: layout.top, width: layout.fw, height: layout.fh };
   }
 
   function toBlob(type, quality, options) {
@@ -316,6 +329,9 @@ export function createCropper({ stage, layerHost, frame, onChange }) {
     resize,
     render,
     toBlob,
+    toCanvas,
+    drawCrop,
+    getFrame,
     hasSource: () => Boolean(source),
     getStats: stats,
   };
