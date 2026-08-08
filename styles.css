@@ -372,18 +372,6 @@ body {
   padding: 10px;
 }
 
-.count {
-  min-width: 18px;
-  padding: 1px 5px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
-.count[hidden] { display: none; }
-
 /* Never shrink: the pane scrolls inside .panes rather than squashing its
    content out over the footer. */
 .pane {

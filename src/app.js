@@ -46,7 +46,6 @@ const el = {
   tabEffects: document.getElementById('tabEffects'),
   paneCrop: document.getElementById('paneCrop'),
   paneEffects: document.getElementById('paneEffects'),
-  chainCount: document.getElementById('chainCount'),
   chainList: document.getElementById('chain'),
   chainEmpty: document.getElementById('chainEmpty'),
   addEffect: document.getElementById('addEffect'),
@@ -136,9 +135,6 @@ function updateChain(next, { rebuild = true } = {}) {
 }
 
 function syncChainMeta() {
-  const active = chain.filter((item) => item.enabled !== false).length;
-  el.chainCount.hidden = active === 0;
-  el.chainCount.textContent = String(active);
   el.chainEmpty.hidden = chain.length > 0;
   // Leave the JSON alone while it is being edited, or typing would fight back.
   if (document.activeElement !== el.json) el.json.value = currentJSON();
