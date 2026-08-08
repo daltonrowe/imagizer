@@ -1,4 +1,4 @@
-import { luma, clamp } from './shared.js';
+import { luma } from './shared.js';
 
 /**
  * Scaffolding the three dithering effects share.
@@ -9,12 +9,6 @@ import { luma, clamp } from './shared.js';
  * "pixel size" give chunky retro dots rather than a fine dither that disappears
  * at export size.
  */
-
-/** Gap between output tones for a given number of levels. */
-export const stepFor = (levels) => 255 / (Math.max(2, Math.round(levels)) - 1);
-
-/** Snap a value to the nearest of `levels` evenly spaced tones. */
-export const quantise = (value, step) => clamp(Math.round(value / step) * step, 0, 255);
 
 /** Average the image into a luminance grid at 1/scale resolution. */
 export function lumaGrid(image, scale) {

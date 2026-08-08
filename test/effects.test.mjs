@@ -57,8 +57,8 @@ test('every effect is registered with the metadata the UI needs', () => {
   const ids = EFFECTS.map((e) => e.id);
   assert.deepEqual(ids.slice().sort(), [
     'atkinson', 'bayer', 'blur', 'channelsort', 'channelthreshold', 'colorize',
-    'greyscale', 'gridgate', 'huerotate', 'pixelsort', 'randomdither', 'reblend',
-    'slicer', 'spotlight', 'threshold', 'vignette',
+    'greyscale', 'gridgate', 'huerotate', 'pixelsort', 'posterize',
+    'randomdither', 'reblend', 'slicer', 'spotlight', 'threshold', 'vignette',
   ]);
   for (const effect of EFFECTS) {
     assert.equal(typeof effect.label, 'string');
@@ -1401,4 +1401,114 @@ test('grid gate survives an image smaller than one cell', () => {
   const img = image(1, 1, () => [10, 20, 30, 255]);
   getEffect('gridgate').apply(img, { params: gateParams(), rng: rng() });
   assert.ok(Number.isFinite(at(img, 0, 0)[0]));
+});
+
+// ---------- posterize ----------
+
+const distinct = (img, offset) => new Set([...img.data].filter((_, i) => i % 4 === offset));
+
+test('posterize reduces each channel to the requested levels', () => {
+  for (const levels of [2, 3, 5, 8]) {
+    const img = image(256, 16, (x) => [x, 255 - x, (x * 3) % 256, 255]);
+    getEffect('posterize').apply(img, { params: { mode: 'channel', levels }, rng: rng() });
+    for (const channel of [0, 1, 2]) {
+      assert.ok(distinct(img, channel).size <= levels,
+        `${levels} levels gave ${distinct(img, channel).size} tones in channel ${channel}`);
+    }
+  }
+});
+
+test('posterize at two levels is black and white per channel', () => {
+  const img = image(256, 1, (x) => [x, x, x, 255]);
+  getEffect('posterize').apply(img, { params: { mode: 'channel', levels: 2 }, rng: rng() });
+  assert.deepEqual([...distinct(img, 0)].sort((a, b) => a - b), [0, 255]);
+  assert.deepEqual(at(img, 10, 0).slice(0, 3), [0, 0, 0]);
+  assert.deepEqual(at(img, 250, 0).slice(0, 3), [255, 255, 255]);
+});
+
+test('posterize snaps to the nearest level, not down to it', () => {
+  // Five levels means steps of 63.75: 0, 64, 128, 191, 255.
+  const img = image(4, 1, (x) => { const v = [0, 60, 130, 255][x]; return [v, v, v, 255]; });
+  getEffect('posterize').apply(img, { params: { mode: 'channel', levels: 5 }, rng: rng() });
+  assert.equal(at(img, 0, 0)[0], 0);
+  assert.equal(at(img, 1, 0)[0], 64, '60 should round up to 64, not down to 0');
+  assert.equal(at(img, 2, 0)[0], 128);
+  assert.equal(at(img, 3, 0)[0], 255);
+});
+
+test('luminance mode keeps hue while stepping the tone', () => {
+  // A ramp of one hue: channel ratios must survive, tones must collapse.
+  const img = image(64, 1, (x) => [x * 4, x * 2, 0, 255]);
+  getEffect('posterize').apply(img, { params: { mode: 'luma', levels: 4 }, rng: rng() });
+
+  const lumas = new Set();
+  let checked = 0;
+  for (let x = 0; x < 64; x++) {
+    const [r, g, b] = at(img, x, 0);
+    lumas.add(Math.round(0.2126 * r + 0.7152 * g + 0.0722 * b));
+    assert.equal(b, 0, 'a channel at zero should stay at zero');
+    if (r < 4) continue;                       // too dark to carry a ratio
+    if (r === 255 || g === 255) continue;      // clipped, see below
+    assert.ok(Math.abs(g / r - 0.5) < 0.06, `hue drifted at x=${x}: ${[r, g, b]}`);
+    checked++;
+  }
+  assert.ok(checked > 10, 'the ratio check needs unclipped pixels to be worth anything');
+  assert.ok(lumas.size <= 5, `expected about 4 tones, got ${lumas.size}`);
+});
+
+test('luminance mode clips when it brightens a saturated colour', () => {
+  // Landing on the next level up can push a channel past 255. It clips there
+  // and the hue shifts a little; staying under would miss the level instead.
+  const img = image(1, 1, () => [224, 112, 0, 255]);
+  getEffect('posterize').apply(img, { params: { mode: 'luma', levels: 4 }, rng: rng() });
+  const [r, g] = at(img, 0, 0);
+  assert.equal(r, 255, 'red should have clipped');
+  assert.ok(g / r > 0.5, 'the clipped channel skews the ratio, by design');
+});
+
+test('luminance mode keeps more colours than per-channel does', () => {
+  const colours = (mode) => {
+    const img = image(64, 64, (x, y) => [x * 4, y * 4, ((x + y) * 2) % 256, 255]);
+    getEffect('posterize').apply(img, { params: { mode, levels: 4 }, rng: rng() });
+    const set = new Set();
+    for (let i = 0; i < img.data.length; i += 4) set.add(`${img.data[i]},${img.data[i + 1]},${img.data[i + 2]}`);
+    return set.size;
+  };
+  // Per channel can only ever make levels^3 = 64 combinations; luminance mode
+  // preserves each pixel's own ratios, so far more survive.
+  assert.ok(colours('channel') <= 64, `per channel gave ${colours('channel')} colours`);
+  assert.ok(colours('luma') > colours('channel'), 'luminance mode should keep more colours');
+});
+
+test('posterize leaves alpha alone in both modes', () => {
+  for (const mode of ['channel', 'luma']) {
+    const img = image(16, 1, (x) => [x * 16, 100, 200, x < 8 ? 255 : 40]);
+    getEffect('posterize').apply(img, { params: { mode, levels: 4 }, rng: rng() });
+    assert.equal(at(img, 2, 0)[3], 255, mode);
+    assert.equal(at(img, 12, 0)[3], 40, mode);
+  }
+});
+
+test('posterize is fixed: the seed makes no difference', () => {
+  for (const mode of ['channel', 'luma']) {
+    const run = (seed) => {
+      const img = image(32, 32, (x, y) => [x * 8, y * 8, 120, 255]);
+      getEffect('posterize').apply(img, { params: { mode, levels: 5 }, rng: createRng(seed) });
+      return [...img.data];
+    };
+    assert.deepEqual(run('one'), run('two'), mode);
+  }
+});
+
+test('posterize at two levels matches a threshold, given greyscale input', () => {
+  const posterized = image(256, 1, (x) => [x, x, x, 255]);
+  getEffect('posterize').apply(posterized, { params: { mode: 'luma', levels: 2 }, rng: rng() });
+
+  const thresholded = image(256, 1, (x) => [x, x, x, 255]);
+  getEffect('threshold').apply(thresholded, { params: { level: 128, softness: 0, invert: false }, rng: rng() });
+
+  // Both snap at the midpoint; posterize rounds 128 up, threshold takes >= 128.
+  for (const x of [0, 60, 127, 129, 200, 255]) {
+    assert.deepEqual(at(posterized, x, 0), at(thresholded, x, 0), `differed at x=${x}`);
+  }
 });

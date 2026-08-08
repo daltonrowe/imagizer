@@ -21,6 +21,7 @@ import channelsort from './channelsort.js';
 import slicer from './slicer.js';
 import vignette from './vignette.js';
 import spotlight from './spotlight.js';
+import posterize from './posterize.js';
 import threshold from './threshold.js';
 import channelthreshold from './channelthreshold.js';
 import gridgate from './gridgate.js';
@@ -39,6 +40,7 @@ export const EFFECTS = [
   slicer,
   vignette,
   spotlight,
+  posterize,
   threshold,
   channelthreshold,
   gridgate,

@@ -14,6 +14,14 @@ export function luma(r, g, b) {
 
 export const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
+// ---------- tone quantisation ----------
+
+/** Gap between output tones for a given number of levels. */
+export const stepFor = (levels) => 255 / (Math.max(2, Math.round(levels)) - 1);
+
+/** Snap a value to the nearest of `levels` evenly spaced tones. */
+export const quantise = (value, step) => clamp(Math.round(value / step) * step, 0, 255);
+
 // ---------- colour ----------
 
 /** `#rrggbb` to [r, g, b] in 0-255. Falls back to black on anything else. */

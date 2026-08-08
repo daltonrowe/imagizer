@@ -91,12 +91,19 @@ input of the next. Each has its own settings:
 | **Grid Gate** | Masks the image behind a regular grid of square or circular apertures |
 | **Vignette** | Darkens in from the edges, heaviest in the corners |
 | **Spotlight** | Darkens everything outside a circle in the middle |
+| **Posterize** | Reduces to a few flat tones, per channel or by luminance |
 | **Threshold BW** | One luminance cut, two tones |
 | **Channel Threshold** | A separate cut per RGB channel, up to eight colours |
 | **Atkinson Dither** | Error diffusion — the pattern follows the image |
 | **Bayer Dither** | Ordered dithering, a woven crosshatch |
 | **Random Dither** | A random threshold per cell — grain, not pattern |
 | **Reblend Original** | Composites the untouched crop back on top |
+
+**Posterize** is the same tone quantisation the dithers do, without the
+dithering, so the bands stay flat. Per channel snaps red, green and blue
+independently for at most levels³ colours — the screen-print look, inventing
+hues the photo never had. Luminance mode snaps brightness and scales the
+channels to match, so each pixel keeps its own hue and far more colours survive.
 
 **Grid Gate** passes pixels through a fixed grid of apertures and blocks the
 rest. Cell size is a percentage of each axis and the aperture a percentage of the

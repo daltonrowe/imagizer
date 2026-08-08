@@ -1,4 +1,5 @@
-import { DITHER_PARAMS, lumaGrid, quantise, stepFor, writeGrid } from './dither.js';
+import { DITHER_PARAMS, lumaGrid, writeGrid } from './dither.js';
+import { quantise, stepFor } from './shared.js';
 
 /** Atkinson diffuses only 6/8 of the error, which is what gives it its bite. */
 const NEIGHBOURS = [
