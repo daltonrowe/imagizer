@@ -73,8 +73,9 @@ a phone.
 ## Effects
 
 An effect chain runs on the cropped region: the output of each effect is the
-input of the next. Five to start with — **Blur**, **Greyscale**, **Pixel Sort**,
-**Threshold BW** and **Atkinson Dither** — each with its own settings.
+input of the next. Six so far — **Blur**, **Greyscale**, **Pixel Sort**,
+**Threshold BW**, **Atkinson Dither** and **Reblend Original** — each with its
+own settings.
 
 The chain is plain data, `[{ id, enabled, params }, ...]`, which is what makes it
 storable, shareable and undoable. Reorder with the arrows, mute a stage without
@@ -92,6 +93,24 @@ because a 1080×1080 crop is 1.2M pixels through five effects and that stalls a
 phone for something displayed at a quarter of the size; the export re-runs the
 chain at full crop resolution and is authoritative. Dither and pixel sort are
 resolution-dependent, so expect the export to be finer-grained than the preview.
+
+### Reblend
+
+**Reblend Original** composites the untouched crop back over the processed
+image, with an opacity and a choice of twelve blend modes. Threshold a photo to
+hard black and white, then reblend the original at 40% and you get the graphic
+shape with the real colour pushed back through it.
+
+The "original" is the image as it entered the chain, not the previous stage's
+output — reading the previous stage would make the effect a no-op. Effects
+declare `needsSource: true` to receive it, and the chain runner only takes the
+copy when something asks, since it is the size of the whole crop.
+
+Blending follows the W3C compositing spec rather than a plain cross-fade, so the
+modes match `mix-blend-mode` and Photoshop, and alpha composites correctly
+instead of the overlay punching a hole through a cutout. One consequence worth
+knowing: soft light preserves pure black and pure white, so reblending it over a
+thresholded image does nothing at all — that is the formula behaving, not a bug.
 
 ### Chain JSON
 

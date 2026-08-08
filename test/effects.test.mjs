@@ -10,6 +10,7 @@ import {
   createItem,
   normalizeChain,
   normalizeParams,
+  chainNeedsSource,
   chainToJSON,
   chainFromJSON,
   RANDOM_MIN,
@@ -54,7 +55,7 @@ const rng = () => createRng('test-seed');
 
 test('every effect is registered with the metadata the UI needs', () => {
   const ids = EFFECTS.map((e) => e.id);
-  assert.deepEqual(ids.slice().sort(), ['atkinson', 'blur', 'greyscale', 'pixelsort', 'threshold']);
+  assert.deepEqual(ids.slice().sort(), ['atkinson', 'blur', 'greyscale', 'pixelsort', 'reblend', 'threshold']);
   for (const effect of EFFECTS) {
     assert.equal(typeof effect.label, 'string');
     assert.equal(typeof effect.stage, 'number');
@@ -356,3 +357,146 @@ function average(img) {
   for (let i = 0; i < img.data.length; i += 4) sum += img.data[i];
   return sum / (img.data.length / 4);
 }
+
+// ---------- reblend ----------
+
+const RED = () => image(8, 8, () => [200, 40, 40, 255]);
+
+/** Run a chain and hand back the finished image. */
+function render(chain, fill = (x, y) => [200, 40, 40, 255], size = 8) {
+  const img = image(size, size, fill);
+  runChain(img, chain, rng());
+  return img;
+}
+
+test('reblend at full opacity and normal mode restores the original exactly', () => {
+  const original = RED();
+  const out = render([
+    createItem('threshold', { level: 128, softness: 0 }),
+    createItem('reblend', { mode: 'normal', opacity: 100 }),
+  ]);
+  assert.deepEqual([...out.data], [...original.data]);
+});
+
+test('reblend at zero opacity changes nothing', () => {
+  const thresholdOnly = render([createItem('threshold', { level: 128, softness: 0 })]);
+  const withReblend = render([
+    createItem('threshold', { level: 128, softness: 0 }),
+    createItem('reblend', { mode: 'normal', opacity: 0 }),
+  ]);
+  assert.deepEqual([...withReblend.data], [...thresholdOnly.data]);
+});
+
+test('reblend composites the chain input, not the previous stage', () => {
+  // Greyscale destroys the colour; reblending the *original* brings it back.
+  // Reading the previous stage instead would leave the image grey.
+  const out = render([
+    createItem('greyscale', { amount: 100 }),
+    createItem('reblend', { mode: 'normal', opacity: 100 }),
+  ]);
+  assert.deepEqual(at(out, 0, 0), [200, 40, 40, 255]);
+});
+
+test('every reblend in a chain sees the same original', () => {
+  const twice = render([
+    createItem('greyscale', { amount: 100 }),
+    createItem('reblend', { mode: 'normal', opacity: 100 }),
+    createItem('greyscale', { amount: 100 }),
+    createItem('reblend', { mode: 'normal', opacity: 100 }),
+  ]);
+  assert.deepEqual(at(twice, 0, 0), [200, 40, 40, 255]);
+});
+
+test('reblend at half opacity lands halfway', () => {
+  const out = render([
+    createItem('threshold', { level: 128, softness: 0, invert: false }),
+    createItem('reblend', { mode: 'normal', opacity: 50 }),
+  ]);
+  // Luma of (200,40,40) is ~72, so threshold gives black; half of red is ~100,20,20.
+  const [r, g, b] = at(out, 0, 0);
+  assert.ok(Math.abs(r - 100) <= 1, `r ${r}`);
+  assert.ok(Math.abs(g - 20) <= 1, `g ${g}`);
+  assert.ok(Math.abs(b - 20) <= 1, `b ${b}`);
+});
+
+test('blend modes follow the W3C formulas', () => {
+  // Backdrop is mid grey after a 50% greyscale... use a known pair instead:
+  // white backdrop via threshold-invert, source is the original red.
+  const modes = {
+    multiply: (cb, cs) => cb * cs,
+    screen: (cb, cs) => cb + cs - cb * cs,
+    darken: Math.min,
+    lighten: Math.max,
+    difference: (cb, cs) => Math.abs(cb - cs),
+    exclusion: (cb, cs) => cb + cs - 2 * cb * cs,
+  };
+
+  for (const [mode, fn] of Object.entries(modes)) {
+    const out = render([
+      // Threshold to pure white so the backdrop is a known 1.0 per channel.
+      createItem('threshold', { level: 0, softness: 0, invert: false }),
+      createItem('reblend', { mode, opacity: 100 }),
+    ]);
+    const [r, g, b] = at(out, 0, 0);
+    const expect = (cs) => Math.round(fn(1, cs / 255) * 255);
+    assert.ok(Math.abs(r - expect(200)) <= 1, `${mode} r: ${r} vs ${expect(200)}`);
+    assert.ok(Math.abs(g - expect(40)) <= 1, `${mode} g: ${g} vs ${expect(40)}`);
+    assert.ok(Math.abs(b - expect(40)) <= 1, `${mode} b: ${b} vs ${expect(40)}`);
+  }
+});
+
+test('difference against an untouched image is black', () => {
+  const out = render([createItem('reblend', { mode: 'difference', opacity: 100 })]);
+  for (let x = 0; x < 8; x++) {
+    assert.deepEqual(at(out, x, 0).slice(0, 3), [0, 0, 0], 'identical images differ by nothing');
+  }
+});
+
+test('reblend keeps transparency instead of punching through a cutout', () => {
+  // Left half opaque, right half fully transparent.
+  const fill = (x) => (x < 4 ? [200, 40, 40, 255] : [0, 0, 0, 0]);
+  const out = render([
+    createItem('greyscale', { amount: 100 }),
+    createItem('reblend', { mode: 'normal', opacity: 100 }),
+  ], fill);
+
+  assert.deepEqual(at(out, 0, 0), [200, 40, 40, 255], 'opaque side comes back in colour');
+  assert.equal(at(out, 6, 0)[3], 0, 'transparent side stays transparent');
+});
+
+test('reblend over a transparent backdrop shows the original plainly', () => {
+  const img = image(4, 4, () => [10, 200, 90, 255]);
+  const source = { data: Uint8ClampedArray.from(img.data), width: 4, height: 4 };
+  // Wipe the backdrop to transparent, then reblend at half opacity.
+  img.data.fill(0);
+  getEffect('reblend').apply(img, {
+    params: { mode: 'multiply', opacity: 50 },
+    rng: rng(),
+    source,
+  });
+  const [r, g, b, a] = at(img, 0, 0);
+  assert.equal(a, 128, 'half-opacity source over nothing is half-opaque');
+  // Colour is the source itself, undimmed — alpha carries the fade, not the RGB.
+  assert.deepEqual([r, g, b], [10, 200, 90]);
+});
+
+test('reblend without a source is a no-op rather than a crash', () => {
+  const img = RED();
+  const copy = [...img.data];
+  getEffect('reblend').apply(img, { params: { mode: 'normal', opacity: 100 }, rng: rng(), source: null });
+  assert.deepEqual([...img.data], copy);
+});
+
+test('the chain only copies the image when an effect asks for it', () => {
+  // The copy is the size of the whole crop, so chains that cannot use it
+  // should not pay for it.
+  assert.equal(chainNeedsSource([]), false);
+  assert.equal(chainNeedsSource([createItem('blur'), createItem('atkinson')]), false);
+  assert.equal(chainNeedsSource([createItem('reblend')]), true);
+  assert.equal(chainNeedsSource([createItem('blur'), createItem('reblend')]), true);
+  assert.equal(chainNeedsSource([{ ...createItem('reblend'), enabled: false }]), false);
+  assert.equal(
+    chainNeedsSource([{ ...createItem('reblend'), enabled: false }, createItem('reblend')]),
+    true,
+  );
+});

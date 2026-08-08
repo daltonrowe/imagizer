@@ -17,8 +17,9 @@ import greyscale from './greyscale.js';
 import pixelsort from './pixelsort.js';
 import threshold from './threshold.js';
 import atkinson from './atkinson.js';
+import reblend from './reblend.js';
 
-export const EFFECTS = [blur, greyscale, pixelsort, threshold, atkinson];
+export const EFFECTS = [blur, greyscale, pixelsort, threshold, atkinson, reblend];
 
 const BY_ID = new Map(EFFECTS.map((effect) => [effect.id, effect]));
 
@@ -78,8 +79,23 @@ export function createItem(id, params) {
   return { id, enabled: true, params: normalizeParams(effect, params) };
 }
 
-/** Run the chain. `image` is mutated in place and returned. */
+/**
+ * Run the chain. `image` is mutated in place and returned.
+ *
+ * Effects that declare `needsSource` also receive the image as it entered the
+ * chain, which is what lets one composite the original back over the processed
+ * result. The copy is only taken when something asks for it — it is the size of
+ * the whole crop, and most chains never need it.
+ */
+export function chainNeedsSource(chain) {
+  return chain.some((item) => item.enabled !== false && getEffect(item.id)?.needsSource === true);
+}
+
 export function runChain(image, chain, rng) {
+  const source = chainNeedsSource(chain)
+    ? { data: Uint8ClampedArray.from(image.data), width: image.width, height: image.height }
+    : null;
+
   chain.forEach((item, index) => {
     if (item.enabled === false) return;
     const effect = getEffect(item.id);
@@ -87,6 +103,7 @@ export function runChain(image, chain, rng) {
     effect.apply(image, {
       params: normalizeParams(effect, item.params),
       rng: rng.fork(`${item.id}#${index}`),
+      source,
     });
   });
   return image;
