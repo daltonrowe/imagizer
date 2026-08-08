@@ -113,8 +113,10 @@ radius of 40, but a random chain that reaches for it just returns mush.
 Effects run twice at different resolutions. The preview renders at screen size,
 because a 1080×1080 crop is 1.2M pixels through five effects and that stalls a
 phone for something displayed at a quarter of the size; the export re-runs the
-chain at full crop resolution and is authoritative. Dither and pixel sort are
-resolution-dependent, so expect the export to be finer-grained than the preview.
+chain at full crop resolution and is authoritative. Settings expressed as
+proportions — pixel sort's max run, coverage — hold at both sizes, but the
+dithers work per pixel, so expect the export to be finer-grained than the
+preview.
 
 ### Reblend
 
@@ -142,7 +144,7 @@ size as a preset you can copy, download, or paste back in:
 ```json
 {
   "format": "imagizer.chain",
-  "version": 1,
+  "version": 2,
   "seed": "golden hour",
   "crop": { "width": 1080, "height": 1080 },
   "effects": [
