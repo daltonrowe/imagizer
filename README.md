@@ -62,6 +62,12 @@ the crop whether or not the chain has anything in it, since the cropped image is
 what the chain is applied to. Changing the crop afterwards is fine — step 2
 re-renders from the new crop.
 
+The numbered stepper moves in both directions; a **Next** button carries you
+forward from step 1 as well. Seed, export format and the export button sit
+together behind a **Seed & export** disclosure at the bottom: they are set once
+and then left alone, so they do not compete with the crop and effect controls for
+the little vertical room a phone has.
+
 ## Effects
 
 An effect chain runs on the cropped region: the output of each effect is the

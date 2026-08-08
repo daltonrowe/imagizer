@@ -100,31 +100,35 @@
     </div><!-- /paneEffects -->
     </div><!-- /panes -->
 
-    <div class="stepnav">
-      <button id="toCrop" class="btn btn-back" type="button" hidden>&larr; Back to crop</button>
+    <div class="stepnav" id="stepNav">
       <button id="toEffects" class="btn btn-next" type="button">Next: add effects &rarr;</button>
     </div>
 
     <div class="footer">
-    <div class="row row-inline row-seed">
-      <label class="inline-label" for="seed">Seed</label>
-      <input id="seed" class="seed-input" type="text" autocomplete="off" autocapitalize="characters"
-             autocorrect="off" spellcheck="false" maxlength="32">
-      <button id="randomize" class="btn btn-icon" type="button" title="Randomize seed" aria-label="Randomize seed">&#127922;</button>
-    </div>
+      <details class="config" id="configPanel">
+        <summary>Seed &amp; export</summary>
+        <div class="config-body">
+          <div class="row row-inline row-seed">
+            <label class="inline-label" for="seed">Seed</label>
+            <input id="seed" class="seed-input" type="text" autocomplete="off" autocapitalize="characters"
+                   autocorrect="off" spellcheck="false" maxlength="32">
+            <button id="randomize" class="btn btn-icon" type="button" title="Randomize seed" aria-label="Randomize seed">&#127922;</button>
+          </div>
 
-    <div class="row row-inline row-actions">
-      <div class="field field-format">
-        <label class="visually-hidden" for="format">Export format</label>
-        <select id="format">
-          <option value="image/png">PNG</option>
-          <option value="image/jpeg">JPEG</option>
-        </select>
-      </div>
-      <button id="export" class="btn btn-primary" type="button" disabled>Export crop</button>
-    </div>
+          <div class="row row-inline row-actions">
+            <div class="field field-format">
+              <label class="visually-hidden" for="format">Export format</label>
+              <select id="format">
+                <option value="image/png">PNG</option>
+                <option value="image/jpeg">JPEG</option>
+              </select>
+            </div>
+            <button id="export" class="btn btn-primary" type="button" disabled>Export crop</button>
+          </div>
+        </div>
+      </details>
 
-    <p class="hint">Drag to position &middot; pinch to zoom &middot; double&#8209;tap to reset</p>
+      <p class="hint">Drag to position &middot; pinch to zoom &middot; double&#8209;tap to reset</p>
     </div><!-- /footer -->
   </section>
 </main>

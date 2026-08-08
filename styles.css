@@ -309,6 +309,8 @@ body {
  * inside a pane. On a short phone the crop controls alone overflow, and the way
  * forward must not be something you scroll to find — nor a sticky button
  * overlapping the control it covers.
+ *
+ * Forward only: going back is what the stepper is for.
  */
 .stepnav {
   flex: 0 0 auto;
@@ -316,8 +318,59 @@ body {
   gap: 8px;
 }
 
+.stepnav[hidden] { display: none; }
 .stepnav .btn { flex: 1; padding: 8px 12px; font-size: 13px; }
-.stepnav .btn[hidden] { display: none; }
+
+/* ---------- configuration ---------- */
+
+/*
+ * Seed and export live behind a disclosure: they are set once and then left
+ * alone, so they should not compete with the crop and effect controls for the
+ * little vertical room a phone has.
+ */
+.config {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+
+.config > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  list-style: none;
+}
+
+/* One disclosure treatment for both the JSON and configuration panels. */
+.config > summary::-webkit-details-marker,
+.json > summary::-webkit-details-marker { display: none; }
+
+.config > summary::before,
+.json > summary::before {
+  content: "›";
+  width: 12px;
+  font-size: 14px;
+  text-align: center;
+  transition: transform 120ms ease;
+}
+
+.config[open] > summary::before,
+.json[open] > summary::before { transform: rotate(90deg); }
+
+.config[open] > summary { border-bottom: 1px solid var(--line); }
+
+.config-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+}
 
 .count {
   min-width: 18px;
@@ -459,12 +512,16 @@ body {
 .json { border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
 
 .json > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 8px 10px;
   color: var(--muted);
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   cursor: pointer;
+  list-style: none;
 }
 
 .json[open] > summary { border-bottom: 1px solid var(--line); }
