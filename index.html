@@ -14,7 +14,6 @@
 <header class="topbar">
   <h1>Imagizer</h1>
   <div class="topbar-actions">
-    <span id="quality" class="badge" hidden></span>
     <button id="pick" class="btn btn-quiet" type="button">Choose photo</button>
   </div>
 </header>
@@ -73,15 +72,12 @@
     </div><!-- /paneCrop -->
 
     <div class="pane" id="paneEffects" role="tabpanel" aria-labelledby="tabEffects" hidden>
-      <p class="step-note">Applied to the crop from step&nbsp;1, top to bottom</p>
-
       <div class="row row-inline">
         <div class="field">
           <label class="visually-hidden" for="addEffect">Add an effect</label>
           <select id="addEffect"></select>
         </div>
         <button id="randomizeChain" class="btn" type="button" title="Build a random chain of 2-5 effects">Randomize</button>
-        <button id="clearChain" class="btn btn-icon" type="button" title="Remove all effects" aria-label="Remove all effects">&times;</button>
       </div>
 
       <ol id="chain" class="chain"></ol>

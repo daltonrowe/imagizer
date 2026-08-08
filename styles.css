@@ -71,20 +71,6 @@ body {
   gap: 10px;
 }
 
-.badge {
-  padding: 3px 8px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: var(--muted);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.badge.warn {
-  border-color: color-mix(in srgb, var(--warn) 50%, transparent);
-  color: var(--warn);
-}
-
 /* ---------- layout ---------- */
 
 .editor {
@@ -297,12 +283,6 @@ body {
 }
 
 .step-arrow { flex: 0 0 auto; color: var(--muted); font-size: 12px; }
-
-.step-note {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-}
 
 /*
  * Step navigation sits between the scrolling panes and the footer rather than

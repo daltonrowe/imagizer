@@ -42,9 +42,6 @@ any static host (GitHub Pages, Netlify, …) — the whole app is static files.
   iOS the share sheet opens so the crop can go back to the camera roll;
   elsewhere it downloads.
 
-A badge in the header shows the source resolution, and turns amber when the crop
-asks for more pixels than the photo can supply at the current zoom.
-
 ## Two steps
 
 The editor is two ordered steps, mirroring the pipeline: **1 Crop** frames the

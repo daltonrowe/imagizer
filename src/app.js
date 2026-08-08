@@ -50,7 +50,6 @@ const el = {
   chainEmpty: document.getElementById('chainEmpty'),
   addEffect: document.getElementById('addEffect'),
   randomizeChain: document.getElementById('randomizeChain'),
-  clearChain: document.getElementById('clearChain'),
   json: document.getElementById('json'),
   jsonPanel: document.getElementById('jsonPanel'),
   jsonCopy: document.getElementById('jsonCopy'),
@@ -64,7 +63,6 @@ const el = {
   pick: document.getElementById('pick'),
   file: document.getElementById('file'),
   download: document.getElementById('download'),
-  quality: document.getElementById('quality'),
   toast: document.getElementById('toast'),
 };
 
@@ -290,11 +288,6 @@ el.randomizeChain.addEventListener('click', () => {
   showEffectsTab();
 });
 
-el.clearChain.addEventListener('click', () => {
-  if (!chain.length) return;
-  updateChain([]);
-});
-
 // ---------- chain JSON ----------
 
 el.jsonCopy.addEventListener('click', async () => {
@@ -361,8 +354,8 @@ function showStep(next) {
   el.stage.classList.toggle('result', effects);
   cropper.setInteractive(!effects);
   el.hint.textContent = effects
-    ? 'Step 2 of 2 · the export runs this chain at full crop size'
-    : 'Step 1 of 2 · drag to position, pinch to zoom, double-tap to reset';
+    ? 'The export runs this chain at full crop size'
+    : 'Drag to position · pinch to zoom · double-tap to reset';
 
   invalidatePreview();
 }
@@ -509,18 +502,11 @@ el.reset.addEventListener('click', () => {
 
 function updateReadout(stats) {
   if (!stats) {
-    el.quality.hidden = true;
     el.zoomVal.textContent = '1.00×';
     return;
   }
   el.zoom.value = String(stats.zoom);
   el.zoomVal.textContent = `${stats.zoom.toFixed(2)}×`;
-
-  el.quality.hidden = false;
-  el.quality.classList.toggle('warn', stats.upscaled);
-  el.quality.textContent = stats.upscaled
-    ? `Upscaled — ${Math.round(stats.sampled.w)}×${Math.round(stats.sampled.h)} source px`
-    : `${stats.source.w}×${stats.source.h} source`;
 
   // Keep the effect preview glued to the frame as it moves or resizes.
   const frame = cropper.getFrame();
