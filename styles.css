@@ -234,10 +234,11 @@ body {
 
 .row { display: flex; flex-direction: column; gap: 6px; }
 
-/* ---------- tabs ---------- */
+/* ---------- steps ---------- */
 
-.tabs {
+.steps {
   display: flex;
+  align-items: center;
   gap: 4px;
   padding: 3px;
   border: 1px solid var(--line);
@@ -245,7 +246,7 @@ body {
   background: var(--panel-2);
 }
 
-.tab {
+.step {
   flex: 1;
   display: flex;
   align-items: center;
@@ -262,10 +263,52 @@ body {
   cursor: pointer;
 }
 
-.tab[aria-selected="true"] {
+.step[aria-selected="true"] {
   background: color-mix(in srgb, var(--accent) 22%, var(--panel));
   color: var(--text);
 }
+
+.step-num {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+.step[aria-selected="true"] .step-num {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-ink);
+  opacity: 1;
+}
+
+.step-arrow { flex: 0 0 auto; color: var(--muted); font-size: 12px; }
+
+.step-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/*
+ * Step navigation sits between the scrolling panes and the footer rather than
+ * inside a pane. On a short phone the crop controls alone overflow, and the way
+ * forward must not be something you scroll to find — nor a sticky button
+ * overlapping the control it covers.
+ */
+.stepnav {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+}
+
+.stepnav .btn { flex: 1; padding: 8px 12px; font-size: 13px; }
+.stepnav .btn[hidden] { display: none; }
 
 .count {
   min-width: 18px;
@@ -540,6 +583,10 @@ input.seed-input {
 }
 
 .mono { font-variant-numeric: tabular-nums; letter-spacing: 0; text-transform: none; }
+
+.row-zoom { align-items: center; }
+.row-zoom .btn { padding: 8px 10px; font-size: 13px; }
+.zoom-val { flex: 0 0 auto; color: var(--muted); font-size: 12px; }
 
 .btn {
   padding: 10px 14px;

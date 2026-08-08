@@ -7,11 +7,11 @@ import {
   getEffect,
   createItem,
   normalizeChain,
-  runChain,
   randomChain,
   chainToJSON,
   chainFromJSON,
 } from './effects/index.js';
+import { renderPipeline, hasActiveEffects } from './pipeline.js';
 
 const PRESETS = [
   { label: 'Square', w: 1080, h: 1080 },
@@ -57,6 +57,9 @@ const el = {
   jsonCopy: document.getElementById('jsonCopy'),
   jsonDownload: document.getElementById('jsonDownload'),
   jsonApply: document.getElementById('jsonApply'),
+  toEffects: document.getElementById('toEffects'),
+  toCrop: document.getElementById('toCrop'),
+  hint: document.querySelector('.footer .hint'),
   format: document.getElementById('format'),
   exportBtn: document.getElementById('export'),
   pick: document.getElementById('pick'),
@@ -336,18 +339,41 @@ el.jsonApply.addEventListener('click', () => {
   }
 });
 
-// ---------- tabs ----------
+// ---------- steps ----------
 
-function showTab(effects) {
+/**
+ * The editor is two ordered steps that mirror the render pipeline: frame the
+ * photo, then process what was framed. The stage follows along — step 1 shows
+ * the untouched photo you are positioning, step 2 shows the processed crop —
+ * so the preview itself says which stage you are looking at.
+ */
+let step = 'crop';
+
+function showStep(next) {
+  step = next === 'effects' ? 'effects' : 'crop';
+  const effects = step === 'effects';
+
   el.tabCrop.setAttribute('aria-selected', String(!effects));
   el.tabEffects.setAttribute('aria-selected', String(effects));
   el.paneCrop.hidden = effects;
   el.paneEffects.hidden = !effects;
+  el.toCrop.hidden = !effects;
+  el.toEffects.hidden = effects;
+  el.hint.textContent = effects
+    ? 'Step 2 of 2 · the export runs this chain at full crop size'
+    : 'Step 1 of 2 · drag to position, pinch to zoom, double-tap to reset';
+
+  invalidatePreview();
 }
 
-const showEffectsTab = () => showTab(true);
-el.tabCrop.addEventListener('click', () => showTab(false));
-el.tabEffects.addEventListener('click', () => showTab(true));
+const showEffectsTab = () => showStep('effects');
+
+for (const element of [el.tabCrop, el.toCrop]) {
+  element.addEventListener('click', () => showStep('crop'));
+}
+for (const element of [el.tabEffects, el.toEffects]) {
+  element.addEventListener('click', () => showStep('effects'));
+}
 
 // ---------- preview ----------
 
@@ -377,7 +403,9 @@ function invalidatePreview() {
 
 function renderPreview() {
   const frame = cropper.getFrame();
-  if (!cropper.hasSource() || !frame || !chain.some((item) => item.enabled !== false)) {
+  // Step 1 shows the untouched photo you are framing; the processed result
+  // belongs to step 2, which is what makes the two stages legible.
+  if (step !== 'effects' || !cropper.hasSource() || !frame || !hasActiveEffects(chain)) {
     el.preview.hidden = true;
     return;
   }
@@ -395,12 +423,14 @@ function renderPreview() {
 
   el.preview.width = width;
   el.preview.height = height;
-  const ctx = el.preview.getContext('2d', { willReadFrequently: true });
-  cropper.drawCrop(ctx, width, height);
-
-  const image = ctx.getImageData(0, 0, width, height);
-  runChain(image, chain, rng);
-  ctx.putImageData(image, 0, 0);
+  renderPipeline({
+    ctx: el.preview.getContext('2d', { willReadFrequently: true }),
+    drawCrop: cropper.drawCrop,
+    width,
+    height,
+    chain,
+    rng,
+  });
 
   positionPreview(frame);
   el.preview.hidden = false;
@@ -569,17 +599,21 @@ el.exportBtn.addEventListener('click', async () => {
     const type = settings.format;
     const jpeg = type === 'image/jpeg';
 
-    // PNG keeps the alpha channel; JPEG cannot, so flatten predictably.
-    const canvas = cropper.toCanvas({ background: jpeg ? JPEG_MATTE : null });
-
-    // The chain runs again here at full crop resolution — the preview was
-    // rendered at screen size, so this is the authoritative render.
-    if (chain.some((item) => item.enabled !== false)) {
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      runChain(image, chain, rng);
-      ctx.putImageData(image, 0, 0);
-    }
+    // Same pipeline as the preview — crop, then effects — but at full crop
+    // resolution, which makes this the authoritative render.
+    const canvas = document.createElement('canvas');
+    canvas.width = settings.cropW;
+    canvas.height = settings.cropH;
+    renderPipeline({
+      ctx: canvas.getContext('2d', { willReadFrequently: true }),
+      drawCrop: cropper.drawCrop,
+      width: canvas.width,
+      height: canvas.height,
+      // PNG keeps the alpha channel; JPEG cannot, so flatten predictably.
+      background: jpeg ? JPEG_MATTE : null,
+      chain,
+      rng,
+    });
 
     const blob = await canvasToBlob(canvas, type, jpeg ? JPEG_QUALITY : undefined);
     const name = `${sourceName}-${settings.cropW}x${settings.cropH}.${jpeg ? 'jpg' : 'png'}`;
@@ -671,6 +705,6 @@ el.addEffect.replaceChildren(
 renderPresets();
 renderChain();
 syncChainMeta();
-showTab(false);
+showStep('crop');
 cropper.setCrop(settings.cropW, settings.cropH);
 saveSettings(settings); // pin the defaults on a first visit

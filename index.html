@@ -36,19 +36,19 @@
   </section>
 
   <section class="controls" aria-label="Editor settings">
-    <div class="tabs" role="tablist">
-      <button class="tab" id="tabCrop" type="button" role="tab" aria-selected="true" aria-controls="paneCrop">Crop</button>
-      <button class="tab" id="tabEffects" type="button" role="tab" aria-selected="false" aria-controls="paneEffects">
-        Effects <span id="chainCount" class="count" hidden></span>
+    <div class="steps" role="tablist" aria-label="Editing steps">
+      <button class="step" id="tabCrop" type="button" role="tab" aria-selected="true" aria-controls="paneCrop">
+        <span class="step-num">1</span> Crop
+      </button>
+      <span class="step-arrow" aria-hidden="true">&rarr;</span>
+      <button class="step" id="tabEffects" type="button" role="tab" aria-selected="false" aria-controls="paneEffects">
+        <span class="step-num">2</span> Effects <span id="chainCount" class="count" hidden></span>
       </button>
     </div>
 
     <div class="panes">
     <div class="pane" id="paneCrop" role="tabpanel" aria-labelledby="tabCrop">
-    <div class="row">
-      <label class="row-label" for="presets">Crop size</label>
-      <div class="presets" id="presets" role="group" aria-label="Crop size presets"></div>
-    </div>
+    <div class="presets" id="presets" role="group" aria-label="Crop size presets"></div>
 
     <div class="row row-inline">
       <div class="field">
@@ -63,16 +63,18 @@
       <div class="field field-unit"><span>px</span></div>
     </div>
 
-    <div class="row">
-      <label class="row-label" for="zoom">Zoom <span id="zoomVal" class="mono">1.00&times;</span></label>
-      <div class="row-inline">
-        <input id="zoom" class="slider" type="range" min="1" max="8" step="0.01" value="1">
-        <button id="reset" class="btn btn-quiet" type="button">Reset</button>
-      </div>
+    <div class="row row-inline row-zoom">
+      <label class="inline-label" for="zoom">Zoom</label>
+      <input id="zoom" class="slider" type="range" min="1" max="8" step="0.01" value="1">
+      <span id="zoomVal" class="mono zoom-val">1.00&times;</span>
+      <button id="reset" class="btn btn-quiet" type="button">Reset</button>
     </div>
+
     </div><!-- /paneCrop -->
 
     <div class="pane" id="paneEffects" role="tabpanel" aria-labelledby="tabEffects" hidden>
+      <p class="step-note">Applied to the crop from step&nbsp;1, top to bottom</p>
+
       <div class="row row-inline">
         <div class="field">
           <label class="visually-hidden" for="addEffect">Add an effect</label>
@@ -97,6 +99,11 @@
       </details>
     </div><!-- /paneEffects -->
     </div><!-- /panes -->
+
+    <div class="stepnav">
+      <button id="toCrop" class="btn btn-back" type="button" hidden>&larr; Back to crop</button>
+      <button id="toEffects" class="btn btn-next" type="button">Next: add effects &rarr;</button>
+    </div>
 
     <div class="footer">
     <div class="row row-inline row-seed">

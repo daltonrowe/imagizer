@@ -295,30 +295,10 @@ export function createCropper({ stage, layerHost, frame, onChange }) {
     ctx.drawImage(source, start.x, start.y, view.w, view.h, 0, 0, width, height);
   }
 
-  /** Render the framed region at the exact requested pixel size. */
-  function toCanvas({ background = null, width = crop.w, height = crop.h } = {}) {
-    const out = document.createElement('canvas');
-    out.width = width;
-    out.height = height;
-    drawCrop(out.getContext('2d'), width, height, { background });
-    return out;
-  }
-
   /** Where the crop frame sits within the stage, in CSS pixels. */
   function getFrame() {
     if (!layout) return null;
     return { left: layout.left, top: layout.top, width: layout.fw, height: layout.fh };
-  }
-
-  function toBlob(type, quality, options) {
-    const canvas = toCanvas(options);
-    return new Promise((resolve, reject) => {
-      canvas.toBlob(
-        (blob) => (blob ? resolve(blob) : reject(new Error('Export failed.'))),
-        type,
-        quality,
-      );
-    });
   }
 
   return {
@@ -328,8 +308,7 @@ export function createCropper({ stage, layerHost, frame, onChange }) {
     reset,
     resize,
     render,
-    toBlob,
-    toCanvas,
+    // Step one of the render pipeline; see src/pipeline.js for where it is run.
     drawCrop,
     getFrame,
     hasSource: () => Boolean(source),

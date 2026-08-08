@@ -45,6 +45,15 @@ any static host (GitHub Pages, Netlify, …) — the whole app is static files.
 A badge in the header shows the source resolution, and turns amber when the crop
 asks for more pixels than the photo can supply at the current zoom.
 
+## Two steps
+
+The editor is two ordered steps, mirroring the pipeline: **1 Crop** frames the
+photo, **2 Effects** processes what was framed. The stage follows along — step 1
+shows the untouched photo you are positioning, step 2 shows the processed result
+inside the frame — so the preview itself tells you which stage you are looking
+at. Changing the crop after adding effects is fine; step 2 re-renders from the
+new crop.
+
 ## Effects
 
 An effect chain runs on the cropped region: the output of each effect is the
@@ -133,6 +142,7 @@ index.html      markup + control panel
 styles.css      layout, including the phone/landscape/desktop arrangements
 src/app.js      wiring: presets, inputs, seed, file loading, export
 src/cropper.js  pan/zoom geometry and the crop render
+src/pipeline.js the render order: crop first, then effects
 src/image.js    File -> upright, size-capped working canvas
 src/effects/    one module per effect, plus the registry and chain runner
 src/random.js   seeded, forkable deterministic generator
@@ -151,5 +161,13 @@ used for export.
     File -> upright working canvas -> crop -> effect chain -> PNG/JPEG
             src/image.js             cropper  src/effects    export
 
-Preview and export share every step; they differ only in the pixel size the crop
-is rendered at.
+The crop is always step one and effects always step two, so effects see the
+framed region and nothing else: a pixel sort finds its run boundaries at the crop
+edges, a dither diffuses error only within the crop, and a blur samples only
+pixels the crop includes.
+
+That order lives in `src/pipeline.js`, which both the preview and the export call
+— they differ only in the pixel size the crop is rendered at. Keeping the
+sequence in one function is what stops the two paths from drifting apart, and
+`test/pipeline.test.mjs` asserts the ordering directly against a recording
+context.
