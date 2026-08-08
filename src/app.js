@@ -211,6 +211,15 @@ function renderParams(effect, item, index) {
   const wrap = document.createElement('div');
   wrap.className = 'params';
 
+  // Params that only apply in some states — a gap colour is meaningless while
+  // the gaps are transparent. They are built either way and shown or hidden
+  // afterwards, so nothing has to be rebuilt when the control they follow moves.
+  const conditional = [];
+  const refresh = () => {
+    const current = chain[index]?.params ?? item.params;
+    for (const entry of conditional) entry.field.hidden = !entry.showWhen(current);
+  };
+
   for (const spec of effect.params) {
     const value = item.params[spec.key];
 
@@ -220,9 +229,13 @@ function renderParams(effect, item, index) {
       const input = document.createElement('input');
       input.type = 'checkbox';
       input.checked = Boolean(value);
-      input.addEventListener('change', () => setParam(index, spec.key, input.checked));
+      input.addEventListener('change', () => {
+        setParam(index, spec.key, input.checked);
+        refresh();
+      });
       label.append(input, document.createTextNode(spec.label));
       wrap.append(label);
+      if (spec.showWhen) conditional.push({ field: label, showWhen: spec.showWhen });
       continue;
     }
 
@@ -248,6 +261,7 @@ function renderParams(effect, item, index) {
       });
       field.append(input);
       wrap.append(field);
+      if (spec.showWhen) conditional.push({ field, showWhen: spec.showWhen });
       continue;
     }
 
@@ -257,7 +271,10 @@ function renderParams(effect, item, index) {
       for (const option of spec.options) {
         select.append(new Option(option.label, option.value, false, option.value === value));
       }
-      select.addEventListener('change', () => setParam(index, spec.key, select.value));
+      select.addEventListener('change', () => {
+        setParam(index, spec.key, select.value);
+        refresh();
+      });
       field.append(select);
     } else {
       const input = document.createElement('input');
@@ -272,7 +289,10 @@ function renderParams(effect, item, index) {
       field.append(input);
     }
     wrap.append(field);
+    if (spec.showWhen) conditional.push({ field, showWhen: spec.showWhen });
   }
+
+  refresh();
   return wrap;
 }
 

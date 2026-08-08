@@ -1512,3 +1512,64 @@ test('posterize at two levels matches a threshold, given greyscale input', () =>
     assert.deepEqual(at(posterized, x, 0), at(thresholded, x, 0), `differed at x=${x}`);
   }
 });
+
+test('slicer cross shift moves bands across the stack', () => {
+  const vacated = (crossShift) => {
+    const img = image(60, 120, slicable);
+    getEffect('slicer').apply(img, {
+      params: slicerParams({ shift: 20, crossShift, transparent: true }),
+      rng: rng(),
+    });
+    // A row nothing landed on is entirely transparent — only possible once a
+    // band has moved off its own row.
+    let empty = 0;
+    for (let y = 0; y < 120; y++) {
+      let all = true;
+      for (let x = 0; x < 60; x++) if (at(img, x, y)[3] !== 0) { all = false; break; }
+      if (all) empty++;
+    }
+    return empty;
+  };
+
+  assert.equal(vacated(0), 0, 'without cross shift every row keeps its own band');
+  assert.ok(vacated(30) > 0, 'with cross shift some rows are left empty');
+});
+
+test('slicer cross shift lands a band on a different line', () => {
+  const original = image(40, 80, slicable);
+  const img = image(40, 80, slicable);
+  getEffect('slicer').apply(img, {
+    params: slicerParams({ shift: 0, crossShift: 25, transparent: true }),
+    rng: rng(),
+  });
+
+  // With no along-shift, any row that received a band holds some other row's
+  // pixels verbatim — find one that is not its own.
+  let moved = 0;
+  for (let y = 0; y < 80; y++) {
+    if (at(img, 0, y)[3] === 0) continue;
+    const sameAsOwn = at(img, 0, y).join() === at(original, 0, y).join();
+    if (!sameAsOwn) moved++;
+  }
+  assert.ok(moved > 0, 'some rows should be showing another row of the image');
+});
+
+test('slicer with both shifts at zero is still a no-op', () => {
+  const img = image(60, 60, slicable);
+  const copy = [...img.data];
+  getEffect('slicer').apply(img, {
+    params: slicerParams({ shift: 0, crossShift: 0 }),
+    rng: rng(),
+  });
+  assert.deepEqual([...img.data], copy);
+});
+
+test('a param can declare when it applies', () => {
+  // The gap colour is meaningless while gaps are transparent, so it says so.
+  for (const id of ['slicer', 'gridgate']) {
+    const spec = getEffect(id).params.find((p) => p.key === 'background');
+    assert.equal(typeof spec.showWhen, 'function', `${id} gap colour should be conditional`);
+    assert.equal(spec.showWhen({ transparent: true }), false);
+    assert.equal(spec.showWhen({ transparent: false }), true);
+  }
+});

@@ -416,6 +416,9 @@ body {
 
 .param { display: flex; flex-direction: column; gap: 0; }
 
+/* `display: flex` above would otherwise ignore the hidden attribute. */
+.param[hidden], .param-toggle[hidden] { display: none; }
+
 /*
  * A 44px touch target leaves ~19px of dead space above and below the 6px track.
  * That pushed every label away from its own slider while the first label sat
@@ -449,10 +452,10 @@ body {
 
 .param-toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
 
-/* A swatch wide enough to tap; the native picker handles the rest. */
+/* A square swatch, still a full touch target; the native picker does the rest. */
 .param-color {
-  width: 100%;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   padding: 3px;
   border: 1px solid var(--line);
   border-radius: 10px;

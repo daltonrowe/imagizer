@@ -115,9 +115,10 @@ slicer, blocked pixels either punch through to transparency or take a colour.
 **Slicer** cuts the image into bands — horizontal ones are rows that shift left
 and right, vertical ones are columns that shift up and down — with band size,
 size jitter and shift all given as percentages, so a look holds at any crop size.
-Shifting does not wrap, so a band leaves a gap behind it; the toggle decides
-whether those gaps punch through to transparency, which a PNG export keeps, or
-land on a chosen colour.
+Cross shift displaces a band across the stack as well as along it, so bands land
+on their neighbours and leave their own row empty. Shifting does not wrap, so a
+band leaves a gap behind it; the toggle decides whether those gaps punch through
+to transparency, which a PNG export keeps, or land on a chosen colour.
 
 Pixel Sort and Channel Sort share one walk over the image and differ in what
 moves. Pixel Sort keys on luminance and moves whole pixels, so every colour in
@@ -214,6 +215,8 @@ but not the constructor, so effects are testable in Node without a DOM.
 
 Params come in four types — `range`, `toggle`, `select` and `color` — each of
 which the UI renders, the normaliser validates, and the randomiser can fill in.
+A param can add `showWhen(params)` to declare when it applies: a gap colour hides
+itself while the gaps are set to transparent.
 Colour params are `#rrggbb` strings; random ones are drawn in HSL so they come
 out vivid rather than the muddy greys uniform RGB mostly produces.
 

@@ -35,7 +35,7 @@ export default {
     { key: 'cellHeight', label: 'Cell height', type: 'range', min: 1, max: 50, step: 1, default: 6, unit: '%', random: [2, 16] },
     { key: 'aperture', label: 'Aperture', type: 'range', min: 5, max: 100, step: 1, default: 60, unit: '%', random: [30, 85] },
     { key: 'transparent', label: 'Gaps transparent', type: 'toggle', default: true },
-    { key: 'background', label: 'Gap colour', type: 'color', default: '#000000' },
+    { key: 'background', label: 'Gap colour', type: 'color', default: '#000000', showWhen: (p) => !p.transparent },
   ],
 
   apply(image, { params }) {
