@@ -284,23 +284,6 @@ body {
 
 .step-arrow { flex: 0 0 auto; color: var(--muted); font-size: 12px; }
 
-/*
- * Step navigation sits between the scrolling panes and the footer rather than
- * inside a pane. On a short phone the crop controls alone overflow, and the way
- * forward must not be something you scroll to find — nor a sticky button
- * overlapping the control it covers.
- *
- * Forward only: going back is what the stepper is for.
- */
-.stepnav {
-  flex: 0 0 auto;
-  display: flex;
-  gap: 8px;
-}
-
-.stepnav[hidden] { display: none; }
-.stepnav .btn { flex: 1; padding: 8px 12px; font-size: 13px; }
-
 /* ---------- configuration ---------- */
 
 /*

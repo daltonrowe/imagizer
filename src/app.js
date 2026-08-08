@@ -55,8 +55,6 @@ const el = {
   jsonCopy: document.getElementById('jsonCopy'),
   jsonDownload: document.getElementById('jsonDownload'),
   jsonApply: document.getElementById('jsonApply'),
-  toEffects: document.getElementById('toEffects'),
-  stepNav: document.getElementById('stepNav'),
   hint: document.querySelector('.footer .hint'),
   format: document.getElementById('format'),
   exportBtn: document.getElementById('export'),
@@ -346,9 +344,6 @@ function showStep(next) {
   el.tabEffects.setAttribute('aria-selected', String(effects));
   el.paneCrop.hidden = effects;
   el.paneEffects.hidden = !effects;
-  // Forward only — the stepper handles going back.
-  el.stepNav.hidden = effects;
-
   // Step 2 shows the finished crop alone — the source photo around it is
   // framing context that belongs to step 1, and gestures go with it.
   el.stage.classList.toggle('result', effects);
@@ -363,9 +358,7 @@ function showStep(next) {
 const showEffectsTab = () => showStep('effects');
 
 el.tabCrop.addEventListener('click', () => showStep('crop'));
-for (const element of [el.tabEffects, el.toEffects]) {
-  element.addEventListener('click', () => showStep('effects'));
-}
+el.tabEffects.addEventListener('click', () => showStep('effects'));
 
 // ---------- preview ----------
 
