@@ -80,16 +80,16 @@
     </div><!-- /paneCrop -->
 
     <div class="pane" id="paneEffects" role="tabpanel" aria-labelledby="tabEffects" hidden>
-      <div class="row row-inline">
+      <ol id="chain" class="chain"></ol>
+      <p id="chainEmpty" class="hint hint-empty">No effects yet. Add one below, or hit Randomize for a chain of 2&ndash;5.</p>
+
+      <div class="row row-inline row-add">
         <div class="field">
           <label class="visually-hidden" for="addEffect">Add an effect</label>
           <select id="addEffect"></select>
         </div>
         <button id="randomizeChain" class="btn" type="button" title="Build a random chain of 2-5 effects">Randomize</button>
       </div>
-
-      <ol id="chain" class="chain"></ol>
-      <p id="chainEmpty" class="hint hint-empty">No effects yet. Add one, or hit Randomize for a chain of 2&ndash;5.</p>
     </div><!-- /paneEffects -->
 
     </div><!-- /panes -->
