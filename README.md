@@ -86,12 +86,21 @@ input of the next. Each has its own settings:
 | **Greyscale** | Desaturates by amount |
 | **Colorize** | Tints with a chosen colour, keeping luminance |
 | **Pixel Sort** | Sorts bright runs into streaks; max run is a share of the line |
+| **Vignette** | Darkens in from the edges, heaviest in the corners |
+| **Spotlight** | Darkens everything outside a circle in the middle |
 | **Threshold BW** | One luminance cut, two tones |
 | **Channel Threshold** | A separate cut per RGB channel, up to eight colours |
 | **Atkinson Dither** | Error diffusion — the pattern follows the image |
 | **Bayer Dither** | Ordered dithering, a woven crosshatch |
 | **Random Dither** | A random threshold per cell — grain, not pattern |
 | **Reblend Original** | Composites the untouched crop back on top |
+
+Vignette and Spotlight share one falloff and differ only in how distance from
+the centre is measured. The vignette scales each axis by its own half-size, so
+its clear region is an ellipse that follows the frame and every edge midpoint
+darkens equally. The spotlight scales both axes alike, so its lit region stays a
+true circle — on a wide crop the vignette hugs the sides while the spotlight
+leaves broad dark bands left and right.
 
 The three dithers differ only in how each cell picks its tone, so they share the
 same scaffolding — average to a grid, decide, paint back as blocks — and the same

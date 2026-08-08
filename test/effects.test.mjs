@@ -57,7 +57,8 @@ test('every effect is registered with the metadata the UI needs', () => {
   const ids = EFFECTS.map((e) => e.id);
   assert.deepEqual(ids.slice().sort(), [
     'atkinson', 'bayer', 'blur', 'channelthreshold', 'colorize', 'greyscale',
-    'huerotate', 'pixelsort', 'randomdither', 'reblend', 'threshold',
+    'huerotate', 'pixelsort', 'randomdither', 'reblend', 'spotlight',
+    'threshold', 'vignette',
   ]);
   for (const effect of EFFECTS) {
     assert.equal(typeof effect.label, 'string');
@@ -837,4 +838,142 @@ test('a version 1 preset still loads, losing only the renamed param', () => {
   assert.equal(params.maxLength, undefined, 'the old key is gone, not carried along');
   assert.equal(params.threshold, 90, 'everything else survives');
   assert.equal(params.reverse, true);
+});
+
+// ---------- vignette, spotlight ----------
+
+const flat = (w, h) => image(w, h, () => [200, 200, 200, 255]);
+const bright = (img, x, y) => at(img, x, y)[0];
+
+for (const id of ['vignette', 'spotlight']) {
+  test(`${id} darkens the edges and leaves the centre alone`, () => {
+    const img = flat(64, 64);
+    getEffect(id).apply(img, { params: defaults(id), rng: rng() });
+    assert.equal(bright(img, 32, 32), 200, 'the centre should be untouched');
+    assert.ok(bright(img, 0, 0) < 200, 'the corner should darken');
+    assert.ok(bright(img, 0, 0) < bright(img, 16, 16), 'darker the further out you go');
+  });
+
+  test(`${id} falls off monotonically from the centre`, () => {
+    const img = flat(80, 80);
+    getEffect(id).apply(img, { params: defaults(id), rng: rng() });
+    let previous = Infinity;
+    for (let x = 40; x < 80; x++) {
+      const value = bright(img, x, 40);
+      assert.ok(value <= previous + 0.5, `brightness rose again at x=${x}`);
+      previous = value;
+    }
+  });
+
+  test(`${id} at zero strength changes nothing`, () => {
+    const img = flat(32, 32);
+    const copy = [...img.data];
+    getEffect(id).apply(img, { params: { ...defaults(id), strength: 0 }, rng: rng() });
+    assert.deepEqual([...img.data], copy);
+  });
+
+  test(`${id} leaves alpha alone`, () => {
+    const img = image(32, 32, (x) => [200, 200, 200, x < 16 ? 255 : 64]);
+    getEffect(id).apply(img, { params: defaults(id), rng: rng() });
+    assert.equal(at(img, 0, 0)[3], 255);
+    assert.equal(at(img, 31, 0)[3], 64);
+  });
+
+  test(`${id} reaches full strength past the falloff`, () => {
+    const img = flat(64, 64);
+    getEffect(id).apply(img, {
+      params: { ...defaults(id), strength: 100, softness: 0, ...(id === 'vignette' ? { size: 10 } : { radius: 10 }) },
+      rng: rng(),
+    });
+    assert.equal(bright(img, 0, 0), 0, 'full strength should reach black');
+  });
+}
+
+test('vignette follows the frame; spotlight stays a circle', () => {
+  // Odd dimensions so the centre lands on an exact pixel — with even sizes the
+  // centre sits on a half-pixel and two "equal" offsets differ by a whole one,
+  // which looks like a broken circle when it is a broken measurement.
+  const width = 201;
+  const height = 81;
+  const cx = 100;
+  const cy = 40;
+  const offset = 30;
+
+  const run = (id, params) => {
+    const img = flat(width, height);
+    getEffect(id).apply(img, { params: { ...defaults(id), ...params }, rng: rng() });
+    return {
+      across: bright(img, cx + offset, cy),
+      down: bright(img, cx, cy - offset),
+      edgeX: bright(img, width - 1, cy),
+      edgeY: bright(img, cx, 0),
+    };
+  };
+
+  // Spotlight scales both axes alike, so equal pixel offsets darken equally.
+  const spot = run('spotlight', { radius: 20, softness: 90 });
+  assert.equal(spot.across, spot.down, `spotlight should be circular, got ${JSON.stringify(spot)}`);
+  assert.ok(spot.across < 200, 'the sample points need to be inside the falloff to prove anything');
+
+  // Vignette normalises per axis, so 30px is a far larger share of the short
+  // side and darkens more there.
+  const vig = run('vignette', { size: 0, softness: 100 });
+  assert.ok(vig.down < vig.across, `vignette should follow the frame, got ${JSON.stringify(vig)}`);
+  assert.ok(vig.across < 200, 'both samples should be inside the falloff');
+
+  // ...and for a vignette every edge midpoint is the same distance out.
+  assert.equal(vig.edgeX, vig.edgeY, 'vignette edge midpoints should match');
+});
+
+test('vignette size pushes the falloff outward', () => {
+  const measure = (size) => {
+    const img = flat(64, 64);
+    getEffect('vignette').apply(img, { params: { ...defaults('vignette'), size, softness: 30 }, rng: rng() });
+    return bright(img, 8, 32);
+  };
+  assert.ok(measure(20) < measure(80), 'a bigger clear area should leave more of the frame bright');
+});
+
+test('spotlight radius grows the lit circle', () => {
+  const measure = (radius) => {
+    const img = flat(64, 64);
+    getEffect('spotlight').apply(img, { params: { ...defaults('spotlight'), radius, softness: 20 }, rng: rng() });
+    return bright(img, 16, 32);
+  };
+  assert.ok(measure(20) < measure(90), 'a bigger radius should leave more of the frame lit');
+});
+
+test('softness controls how abruptly the darkening arrives', () => {
+  const edges = (softness) => {
+    const img = flat(80, 80);
+    getEffect('spotlight').apply(img, {
+      params: { ...defaults('spotlight'), strength: 100, radius: 40, softness },
+      rng: rng(),
+    });
+    // Count the distinct brightnesses along a radius: a hard edge gives two.
+    const values = new Set();
+    for (let x = 40; x < 80; x++) values.add(bright(img, x, 40));
+    return values.size;
+  };
+  assert.ok(edges(0) <= 3, `no softness should give a hard edge, saw ${edges(0)} tones`);
+  assert.ok(edges(60) > 8, `softness should give a gradient, saw ${edges(60)} tones`);
+});
+
+test('neither effect needs randomness', () => {
+  for (const id of ['vignette', 'spotlight']) {
+    const run = (seed) => {
+      const img = flat(32, 32);
+      getEffect(id).apply(img, { params: defaults(id), rng: createRng(seed) });
+      return [...img.data];
+    };
+    assert.deepEqual(run('one'), run('two'), `${id} should not depend on the seed`);
+  }
+});
+
+test('the falloff survives a 1px image without dividing by zero', () => {
+  for (const id of ['vignette', 'spotlight']) {
+    const img = image(1, 1, () => [200, 200, 200, 255]);
+    getEffect(id).apply(img, { params: defaults(id), rng: rng() });
+    assert.ok(Number.isFinite(at(img, 0, 0)[0]), `${id} produced a non-finite pixel`);
+  }
 });
