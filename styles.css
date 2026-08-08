@@ -464,11 +464,95 @@ body {
 .param-color::-webkit-color-swatch { border: 0; border-radius: 7px; }
 .param-color::-moz-color-swatch { border: 0; border-radius: 7px; }
 
+/* ---------- settings drawer ---------- */
+
+/*
+ * A native <dialog>, so Escape, focus trapping and inert background come for
+ * free. Full screen rather than a partial sheet: it also means opening settings
+ * no longer squeezes the control panel and shrinks the stage underneath it.
+ */
+.drawer {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  max-height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: var(--panel);
+  color: var(--text);
+  overflow: hidden;
+}
+
+/* `display: flex` above would otherwise keep a closed dialog on screen. */
+.drawer:not([open]) { display: none; }
+
+.drawer::backdrop { background: rgba(6, 7, 11, 0.7); }
+
+/* Slides up like a drawer. Browsers without @starting-style just cut to it. */
+.drawer,
+.drawer::backdrop {
+  transition:
+    transform 240ms cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 240ms ease,
+    overlay 240ms allow-discrete,
+    display 240ms allow-discrete;
+}
+
+.drawer { transform: translateY(100%); }
+.drawer[open] { transform: translateY(0); }
+.drawer::backdrop { opacity: 0; }
+.drawer[open]::backdrop { opacity: 1; }
+
+@starting-style {
+  .drawer[open] { transform: translateY(100%); }
+  .drawer[open]::backdrop { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer, .drawer::backdrop { transition: none; }
+  .drawer { transform: none; }
+}
+
+.drawer-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: max(12px, env(safe-area-inset-top, 0px)) 14px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.drawer-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.drawer-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 14px calc(16px + var(--safe-b));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* The JSON box takes whatever height is left rather than a fixed row count. */
+.row-json { flex: 1 1 auto; min-height: 140px; }
+.row-json .json-text { flex: 1 1 auto; min-height: 0; }
+
 /* ---------- chain JSON ---------- */
 
 .json-text {
   display: block;
   width: 100%;
+  resize: none;
   padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -477,7 +561,6 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   line-height: 1.45;
-  resize: vertical;
 }
 
 .json-actions .btn { flex: 1; padding: 8px 10px; font-size: 13px; }

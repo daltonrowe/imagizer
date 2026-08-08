@@ -46,8 +46,9 @@ const el = {
   tabEffects: document.getElementById('tabEffects'),
   paneCrop: document.getElementById('paneCrop'),
   paneEffects: document.getElementById('paneEffects'),
-  paneSettings: document.getElementById('paneSettings'),
   tabSettings: document.getElementById('tabSettings'),
+  settings: document.getElementById('settings'),
+  settingsClose: document.getElementById('settingsClose'),
   chainList: document.getElementById('chain'),
   chainEmpty: document.getElementById('chainEmpty'),
   addEffect: document.getElementById('addEffect'),
@@ -387,28 +388,16 @@ el.jsonApply.addEventListener('click', () => {
  */
 let step = 'crop';
 
-/**
- * Settings is a panel layered over whichever step is current, not a third step:
- * seed, export and the chain JSON apply to both, and closing it has to put you
- * back where you were.
- */
-let settingsOpen = false;
-
 function syncPanes() {
   const effects = step === 'effects';
 
   el.tabCrop.setAttribute('aria-selected', String(!effects));
   el.tabEffects.setAttribute('aria-selected', String(effects));
-  el.tabSettings.setAttribute('aria-expanded', String(settingsOpen));
+  el.paneCrop.hidden = effects;
+  el.paneEffects.hidden = !effects;
 
-  el.paneCrop.hidden = settingsOpen || effects;
-  el.paneEffects.hidden = settingsOpen || !effects;
-  el.paneSettings.hidden = !settingsOpen;
-
-  // The stage keeps showing the current step while settings are open, so the
-  // panel never changes what you are looking at. Step 2 shows the finished crop
-  // alone — the source photo around it is framing context for step 1, and
-  // gestures go with it.
+  // Step 2 shows the finished crop alone — the source photo around it is
+  // framing context that belongs to step 1, and gestures go with it.
   el.stage.classList.toggle('result', effects);
   cropper.setInteractive(!effects);
 }
@@ -416,9 +405,8 @@ function syncPanes() {
 function showStep(next) {
   const previous = step;
   step = next === 'effects' ? 'effects' : 'crop';
-  settingsOpen = false;
   syncPanes();
-  // Only a step change alters what the stage renders; settings does not.
+  // Only a step change alters what the stage renders.
   if (step !== previous) invalidatePreview();
 }
 
@@ -426,10 +414,29 @@ const showEffectsTab = () => showStep('effects');
 
 el.tabCrop.addEventListener('click', () => showStep('crop'));
 el.tabEffects.addEventListener('click', () => showStep('effects'));
+
+// ---------- settings drawer ----------
+
+/**
+ * Seed, export format and the chain JSON live in a modal drawer rather than a
+ * pane: they apply to both steps, and as a dialog they leave the editor exactly
+ * as it was underneath — same step, same stage, no reflow.
+ */
 el.tabSettings.addEventListener('click', () => {
-  settingsOpen = !settingsOpen;
-  syncPanes();
+  // The gear can only open it: a full-screen modal covers the gear, so the way
+  // back out is the close button or Escape. The guard is for safety, since
+  // showModal() throws on an already-open dialog.
+  if (el.settings.open) return;
+  el.settings.showModal();
+  el.tabSettings.setAttribute('aria-expanded', 'true');
 });
+
+el.settingsClose.addEventListener('click', () => el.settings.close());
+
+// Fires for the close button and for Escape alike, so the gear tracks both.
+// (Set here rather than on `toggle`, which dialogs only started firing
+// recently and Safari may not send at all.)
+el.settings.addEventListener('close', () => el.tabSettings.setAttribute('aria-expanded', 'false'));
 
 // ---------- preview ----------
 

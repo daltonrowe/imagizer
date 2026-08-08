@@ -60,11 +60,15 @@ what the chain is applied to. Changing the crop afterwards is fine — step 2
 re-renders from the new crop.
 
 The numbered stepper is the navigation, in both directions, and **Download** sits
-below it on every screen. Beside the stepper, a gear opens a settings panel
+below it on every screen. Beside the stepper, a gear opens a full-screen drawer
 holding the seed, the export format and the chain JSON — everything that applies
-to both steps rather than to one of them. It layers over whichever step is
-current and leaves the stage alone, so opening it never changes what you are
-looking at; picking a step closes it again.
+to both steps rather than to one of them.
+
+The drawer is a native `<dialog>`, so Escape, focus trapping and an inert
+background come for free, and being in the top layer it leaves the editor exactly
+as it was underneath: same step, same stage size, no reflow. It closes with the
+button or Escape — a full-screen modal covers the gear, so the gear can only ever
+open it.
 
 Sliders are 44px tall with a 28px thumb — the native control is replaced
 outright, since `accent-color` cannot grow a thumb that is a few pixels wide on

@@ -44,8 +44,8 @@
           <span class="step-num">2</span> Effects
         </button>
       </div>
-      <button class="gear" id="tabSettings" type="button" aria-expanded="false" aria-controls="paneSettings"
-              title="Seed, export and chain JSON" aria-label="Settings">
+      <button class="gear" id="tabSettings" type="button" aria-expanded="false" aria-controls="settings"
+              aria-haspopup="dialog" title="Seed, export and chain JSON" aria-label="Settings">
         <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor"
              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3"/>
@@ -92,33 +92,6 @@
       <p id="chainEmpty" class="hint hint-empty">No effects yet. Add one, or hit Randomize for a chain of 2&ndash;5.</p>
     </div><!-- /paneEffects -->
 
-    <div class="pane" id="paneSettings" hidden>
-      <div class="row row-inline row-seed">
-        <label class="inline-label" for="seed">Seed</label>
-        <input id="seed" class="seed-input" type="text" autocomplete="off" autocapitalize="characters"
-               autocorrect="off" spellcheck="false" maxlength="32">
-        <button id="randomize" class="btn btn-icon" type="button" title="Randomize seed" aria-label="Randomize seed">&#127922;</button>
-      </div>
-
-      <div class="row">
-        <label class="row-label" for="format">Export format</label>
-        <select id="format">
-          <option value="image/png">PNG</option>
-          <option value="image/jpeg">JPEG</option>
-        </select>
-      </div>
-
-      <div class="row">
-        <label class="row-label" for="json">Chain JSON</label>
-        <textarea id="json" class="json-text" rows="6" spellcheck="false" autocapitalize="off"
-                  autocorrect="off" aria-label="Effect chain as JSON"></textarea>
-        <div class="row-inline json-actions">
-          <button id="jsonCopy" class="btn" type="button">Copy</button>
-          <button id="jsonDownload" class="btn" type="button">Download</button>
-          <button id="jsonApply" class="btn btn-primary" type="button">Apply</button>
-        </div>
-      </div>
-    </div><!-- /paneSettings -->
     </div><!-- /panes -->
 
     <div class="footer">
@@ -126,6 +99,41 @@
     </div><!-- /footer -->
   </section>
 </main>
+
+<dialog id="settings" class="drawer" aria-labelledby="settingsTitle">
+  <div class="drawer-head">
+    <h2 id="settingsTitle">Settings</h2>
+    <button id="settingsClose" class="btn btn-icon" type="button" aria-label="Close settings">&times;</button>
+  </div>
+
+  <div class="drawer-body">
+    <div class="row row-inline row-seed">
+      <label class="inline-label" for="seed">Seed</label>
+      <input id="seed" class="seed-input" type="text" autocomplete="off" autocapitalize="characters"
+             autocorrect="off" spellcheck="false" maxlength="32">
+      <button id="randomize" class="btn btn-icon" type="button" title="Randomize seed" aria-label="Randomize seed">&#127922;</button>
+    </div>
+
+    <div class="row">
+      <label class="row-label" for="format">Export format</label>
+      <select id="format">
+        <option value="image/png">PNG</option>
+        <option value="image/jpeg">JPEG</option>
+      </select>
+    </div>
+
+    <div class="row row-json">
+      <label class="row-label" for="json">Chain JSON</label>
+      <textarea id="json" class="json-text" spellcheck="false" autocapitalize="off"
+                autocorrect="off" aria-label="Effect chain as JSON"></textarea>
+      <div class="row-inline json-actions">
+        <button id="jsonCopy" class="btn" type="button">Copy</button>
+        <button id="jsonDownload" class="btn" type="button">Download</button>
+        <button id="jsonApply" class="btn btn-primary" type="button">Apply</button>
+      </div>
+    </div>
+  </div>
+</dialog>
 
 <input id="file" class="visually-hidden" type="file" accept="image/*">
 <a id="download" class="visually-hidden" download></a>
