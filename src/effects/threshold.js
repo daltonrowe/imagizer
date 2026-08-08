@@ -4,7 +4,7 @@ export default {
   id: 'threshold',
   label: 'Threshold BW',
   // Late: hard black-and-white is usually the finishing move, not the base.
-  stage: 3,
+  stage: 5,
   params: [
     { key: 'level', label: 'Level', type: 'range', min: 0, max: 255, step: 1, default: 128, random: [70, 190] },
     { key: 'softness', label: 'Softness', type: 'range', min: 0, max: 128, step: 1, default: 0, random: [0, 40] },

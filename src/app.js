@@ -221,6 +221,23 @@ function renderParams(effect, item, index) {
     head.append(Object.assign(document.createElement('span'), { textContent: spec.label }), readout);
     field.append(head);
 
+    if (spec.type === 'color') {
+      readout.textContent = value;
+      readout.classList.add('mono');
+      const input = document.createElement('input');
+      input.type = 'color';
+      input.className = 'param-color';
+      input.value = value;
+      input.addEventListener('input', () => {
+        readout.textContent = input.value;
+        // No rebuild: recreating the swatch mid-pick closes the colour picker.
+        setParam(index, spec.key, input.value, { rebuild: false });
+      });
+      field.append(input);
+      wrap.append(field);
+      continue;
+    }
+
     if (spec.type === 'select') {
       readout.textContent = '';
       const select = document.createElement('select');

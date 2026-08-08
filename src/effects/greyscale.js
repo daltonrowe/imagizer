@@ -4,7 +4,7 @@ export default {
   id: 'greyscale',
   label: 'Greyscale',
   // Runs early: desaturating before a threshold or dither is the usual order.
-  stage: 1,
+  stage: 2,
   params: [
     { key: 'amount', label: 'Amount', type: 'range', min: 0, max: 100, step: 1, default: 100, unit: '%', random: [60, 100] },
   ],

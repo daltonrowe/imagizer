@@ -53,7 +53,7 @@ export default {
   id: 'reblend',
   label: 'Reblend Original',
   // Last: it exists to bring the photo back over whatever came before.
-  stage: 5,
+  stage: 7,
   // Asks the chain runner to keep a copy of the image as it came in.
   needsSource: true,
   params: [

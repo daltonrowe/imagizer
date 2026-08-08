@@ -12,7 +12,7 @@ export default {
   id: 'pixelsort',
   label: 'Pixel Sort',
   // Middle: wants real tones to sort, but before a threshold flattens them.
-  stage: 2,
+  stage: 4,
   params: [
     {
       key: 'direction',

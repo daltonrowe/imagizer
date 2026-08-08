@@ -73,9 +73,27 @@ a phone.
 ## Effects
 
 An effect chain runs on the cropped region: the output of each effect is the
-input of the next. Six so far — **Blur**, **Greyscale**, **Pixel Sort**,
-**Threshold BW**, **Atkinson Dither** and **Reblend Original** — each with its
-own settings.
+input of the next. Each has its own settings:
+
+| Effect | What it does |
+| --- | --- |
+| **Blur** | Box blur, three passes, alpha-safe |
+| **Hue Rotate** | Rotates every hue by an angle |
+| **Greyscale** | Desaturates by amount |
+| **Colorize** | Tints with a chosen colour, keeping luminance |
+| **Pixel Sort** | Sorts bright runs into streaks |
+| **Threshold BW** | One luminance cut, two tones |
+| **Channel Threshold** | A separate cut per RGB channel, up to eight colours |
+| **Atkinson Dither** | Error diffusion — the pattern follows the image |
+| **Bayer Dither** | Ordered dithering, a woven crosshatch |
+| **Random Dither** | A random threshold per cell — grain, not pattern |
+| **Reblend Original** | Composites the untouched crop back on top |
+
+The three dithers differ only in how each cell picks its tone, so they share the
+same scaffolding — average to a grid, decide, paint back as blocks — and the same
+Levels and Pixel size controls. Atkinson pushes its rounding error onto
+neighbours, Bayer compares against a fixed matrix (no randomness at all, so it
+ignores the seed), and Random rolls a threshold from `noiseAt(x, y)`.
 
 The chain is plain data, `[{ id, enabled, params }, ...]`, which is what makes it
 storable, shareable and undoable. Reorder with the arrows, mute a stage without
@@ -141,6 +159,11 @@ Drop a module in `src/effects/` exporting `{ id, label, stage, params, apply }`
 and register it in `src/effects/index.js`. `apply(image, { params, rng })` gets a
 `{ data, width, height }` image to mutate in place — the same shape as ImageData
 but not the constructor, so effects are testable in Node without a DOM.
+
+Params come in four types — `range`, `toggle`, `select` and `color` — each of
+which the UI renders, the normaliser validates, and the randomiser can fill in.
+Colour params are `#rrggbb` strings; random ones are drawn in HSL so they come
+out vivid rather than the muddy greys uniform RGB mostly produces.
 
 ## Seeded randomness
 

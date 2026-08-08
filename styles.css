@@ -440,6 +440,21 @@ body {
 
 .param-toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
 
+/* A swatch wide enough to tap; the native picker handles the rest. */
+.param-color {
+  width: 100%;
+  height: 40px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.param-color::-webkit-color-swatch-wrapper { padding: 0; }
+.param-color::-webkit-color-swatch { border: 0; border-radius: 7px; }
+.param-color::-moz-color-swatch { border: 0; border-radius: 7px; }
+
 /* ---------- chain JSON ---------- */
 
 .json-text {

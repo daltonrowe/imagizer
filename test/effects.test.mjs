@@ -55,13 +55,16 @@ const rng = () => createRng('test-seed');
 
 test('every effect is registered with the metadata the UI needs', () => {
   const ids = EFFECTS.map((e) => e.id);
-  assert.deepEqual(ids.slice().sort(), ['atkinson', 'blur', 'greyscale', 'pixelsort', 'reblend', 'threshold']);
+  assert.deepEqual(ids.slice().sort(), [
+    'atkinson', 'bayer', 'blur', 'channelthreshold', 'colorize', 'greyscale',
+    'huerotate', 'pixelsort', 'randomdither', 'reblend', 'threshold',
+  ]);
   for (const effect of EFFECTS) {
     assert.equal(typeof effect.label, 'string');
     assert.equal(typeof effect.stage, 'number');
     assert.equal(typeof effect.apply, 'function');
     for (const spec of effect.params) {
-      assert.ok(['range', 'toggle', 'select'].includes(spec.type), `${effect.id}.${spec.key}`);
+      assert.ok(['range', 'toggle', 'select', 'color'].includes(spec.type), `${effect.id}.${spec.key}`);
       assert.notEqual(spec.default, undefined, `${effect.id}.${spec.key} needs a default`);
       if (spec.type === 'range') {
         assert.ok(spec.min < spec.max);
@@ -500,3 +503,262 @@ test('the chain only copies the image when an effect asks for it', () => {
     true,
   );
 });
+
+// ---------- bayer, random dither ----------
+
+const ramp = (x) => { const v = Math.min(255, x * 4); return [v, v, v, 255]; };
+const tones = (img) => {
+  const set = new Set();
+  for (let i = 0; i < img.data.length; i += 4) set.add(img.data[i]);
+  return [...set].sort((a, b) => a - b);
+};
+
+for (const id of ['bayer', 'randomdither']) {
+  test(`${id} quantises to the requested levels`, () => {
+    const two = image(64, 64, ramp);
+    getEffect(id).apply(two, { params: { ...defaults(id), levels: 2, scale: 1 }, rng: rng() });
+    assert.deepEqual(tones(two), [0, 255], 'two levels means pure black and white');
+
+    const four = image(64, 64, ramp);
+    getEffect(id).apply(four, { params: { ...defaults(id), levels: 4, scale: 1 }, rng: rng() });
+    assert.ok(tones(four).length > 2 && tones(four).length <= 4, `got ${tones(four).length} tones`);
+  });
+
+  test(`${id} approximates the original brightness`, () => {
+    const img = image(96, 96, (x, y) => { const v = (x + y) % 256; return [v, v, v, 255]; });
+    const before = average(img);
+    getEffect(id).apply(img, { params: { ...defaults(id), levels: 2, scale: 1 }, rng: rng() });
+    assert.ok(Math.abs(average(img) - before) < 14, `drifted: ${average(img)} vs ${before}`);
+  });
+
+  test(`${id} pixel size produces uniform blocks`, () => {
+    const img = image(32, 32, (x, y) => { const v = (x * 8 + y * 3) % 256; return [v, v, v, 255]; });
+    getEffect(id).apply(img, { params: { ...defaults(id), levels: 2, scale: 4 }, rng: rng() });
+    for (let by = 0; by < 32; by += 4) {
+      for (let bx = 0; bx < 32; bx += 4) {
+        const expected = at(img, bx, by)[0];
+        for (let y = by; y < by + 4; y++) {
+          for (let x = bx; x < bx + 4; x++) {
+            assert.equal(at(img, x, y)[0], expected, `block at ${bx},${by} not uniform`);
+          }
+        }
+      }
+    }
+  });
+
+  test(`${id} leaves alpha alone`, () => {
+    const img = image(16, 16, (x) => [x * 16, x * 16, x * 16, x < 8 ? 255 : 0]);
+    getEffect(id).apply(img, { params: { ...defaults(id), levels: 2, scale: 1 }, rng: rng() });
+    assert.equal(at(img, 2, 0)[3], 255);
+    assert.equal(at(img, 12, 0)[3], 0);
+  });
+}
+
+test('bayer is a fixed pattern: same output regardless of seed', () => {
+  const run = (seed) => {
+    const img = image(48, 48, ramp);
+    getEffect('bayer').apply(img, { params: { matrix: '4', levels: 2, scale: 1 }, rng: createRng(seed) });
+    return [...img.data];
+  };
+  assert.deepEqual(run('one'), run('two'), 'ordered dithering must not depend on randomness');
+});
+
+test('bayer matrix size changes the pattern', () => {
+  const run = (matrix) => {
+    const img = image(48, 48, ramp);
+    getEffect('bayer').apply(img, { params: { matrix, levels: 2, scale: 1 }, rng: rng() });
+    return [...img.data].join(',');
+  };
+  assert.notEqual(run('2'), run('4'));
+  assert.notEqual(run('4'), run('8'));
+});
+
+test('bayer produces a repeating pattern on flat input', () => {
+  // A flat mid grey should break into a regular 4x4 tile, not a solid block.
+  const img = image(16, 16, () => [128, 128, 128, 255]);
+  getEffect('bayer').apply(img, { params: { matrix: '4', levels: 2, scale: 1 }, rng: rng() });
+  assert.deepEqual(tones(img), [0, 255], 'flat grey should dither, not flatten');
+  for (let y = 0; y < 4; y++) {
+    for (let x = 0; x < 4; x++) {
+      assert.equal(at(img, x, y)[0], at(img, x + 4, y + 4)[0], 'pattern should tile every 4px');
+    }
+  }
+});
+
+test('random dither follows the seed and varies with it', () => {
+  const run = (seed) => {
+    const img = image(48, 48, () => [128, 128, 128, 255]);
+    getEffect('randomdither').apply(img, {
+      params: { levels: 2, scale: 1, amount: 100 },
+      rng: createRng(seed),
+    });
+    return [...img.data].join(',');
+  };
+  assert.equal(run('alpha'), run('alpha'), 'same seed reproduces the grain');
+  assert.notEqual(run('alpha'), run('beta'), 'a new seed reshuffles it');
+});
+
+test('random dither with no noise is a plain threshold', () => {
+  const img = image(64, 1, (x) => { const v = x * 4; return [v, v, v, 255]; });
+  getEffect('randomdither').apply(img, { params: { levels: 2, scale: 1, amount: 0 }, rng: rng() });
+  for (let x = 0; x < 64; x++) {
+    const expected = x * 4 >= 128 ? 255 : 0;
+    assert.equal(at(img, x, 0)[0], expected, `x=${x} should follow the midpoint`);
+  }
+});
+
+test('random dither is unordered, unlike bayer', () => {
+  const flat = () => image(16, 16, () => [128, 128, 128, 255]);
+  const b = flat(); getEffect('bayer').apply(b, { params: { matrix: '4', levels: 2, scale: 1 }, rng: rng() });
+  const r = flat(); getEffect('randomdither').apply(r, { params: { levels: 2, scale: 1, amount: 100 }, rng: rng() });
+  assert.notDeepEqual([...b.data], [...r.data]);
+});
+
+// ---------- channel threshold ----------
+
+test('channel threshold cuts each channel at its own level', () => {
+  const img = image(1, 1, () => [200, 100, 50, 255]);
+  getEffect('channelthreshold').apply(img, {
+    params: { red: 150, green: 150, blue: 40, invert: false },
+    rng: rng(),
+  });
+  // red 200>=150 on, green 100<150 off, blue 50>=40 on -> magenta
+  assert.deepEqual(at(img, 0, 0), [255, 0, 255, 255]);
+});
+
+test('channel threshold yields at most eight colours and keeps alpha', () => {
+  const img = image(64, 64, (x, y) => [x * 4, y * 4, (x + y) * 2, 128]);
+  getEffect('channelthreshold').apply(img, {
+    params: { red: 128, green: 128, blue: 128, invert: false },
+    rng: rng(),
+  });
+  const colours = new Set();
+  for (let i = 0; i < img.data.length; i += 4) {
+    colours.add(`${img.data[i]},${img.data[i + 1]},${img.data[i + 2]}`);
+    assert.equal(img.data[i + 3], 128);
+  }
+  assert.ok(colours.size <= 8, `expected up to 8 colours, got ${colours.size}`);
+  for (const colour of colours) {
+    for (const channel of colour.split(',')) assert.ok(channel === '0' || channel === '255');
+  }
+});
+
+test('channel threshold inverts every channel', () => {
+  const params = { red: 128, green: 128, blue: 128 };
+  const plain = image(1, 1, () => [200, 100, 50, 255]);
+  const inverted = image(1, 1, () => [200, 100, 50, 255]);
+  getEffect('channelthreshold').apply(plain, { params: { ...params, invert: false }, rng: rng() });
+  getEffect('channelthreshold').apply(inverted, { params: { ...params, invert: true }, rng: rng() });
+  const [r, g, b] = at(plain, 0, 0);
+  assert.deepEqual(at(inverted, 0, 0), [255 - r, 255 - g, 255 - b, 255]);
+});
+
+// ---------- colorize ----------
+
+test('colorize keeps luminance ordering and takes the target hue', () => {
+  const img = image(64, 1, (x) => { const v = x * 4; return [v, v, v, 255]; });
+  getEffect('colorize').apply(img, { params: { color: '#ff0000', amount: 100 }, rng: rng() });
+
+  // Dark stays dark, light stays light.
+  assert.ok(at(img, 2, 0)[0] < at(img, 60, 0)[0], 'lightness order preserved');
+  // A red tint means red dominates through the midtones.
+  const [r, g, b] = at(img, 32, 0);
+  assert.ok(r > g && r > b, `expected a red cast, got ${[r, g, b]}`);
+  assert.equal(g, b, 'red has no green/blue bias of its own');
+});
+
+test('colorize at zero amount changes nothing', () => {
+  const img = image(8, 8, (x) => [x * 30, 100, 200, 255]);
+  const copy = [...img.data];
+  getEffect('colorize').apply(img, { params: { color: '#00ff00', amount: 0 }, rng: rng() });
+  assert.deepEqual([...img.data], copy);
+});
+
+test('colorize keeps black black and white white', () => {
+  const img = image(2, 1, (x) => (x === 0 ? [0, 0, 0, 255] : [255, 255, 255, 255]));
+  getEffect('colorize').apply(img, { params: { color: '#3366cc', amount: 100 }, rng: rng() });
+  assert.deepEqual(at(img, 0, 0), [0, 0, 0, 255]);
+  assert.deepEqual(at(img, 1, 0), [255, 255, 255, 255]);
+});
+
+test('colorize preserves alpha and blends partway', () => {
+  const img = image(1, 1, () => [200, 40, 40, 90]);
+  getEffect('colorize').apply(img, { params: { color: '#00ff00', amount: 50 }, rng: rng() });
+  const [r, g, b, a] = at(img, 0, 0);
+  assert.equal(a, 90);
+  assert.ok(g > 40 && r < 200, `expected a partial shift toward green, got ${[r, g, b]}`);
+});
+
+// ---------- hue rotate ----------
+
+test('hue rotate by 0 or 360 degrees leaves the image alone', () => {
+  for (const angle of [0, 360]) {
+    const img = image(8, 8, (x) => [x * 30, 120, 200, 255]);
+    const copy = [...img.data];
+    getEffect('huerotate').apply(img, { params: { angle }, rng: rng() });
+    for (let i = 0; i < copy.length; i++) {
+      assert.ok(Math.abs(img.data[i] - copy[i]) <= 1, `angle ${angle} changed channel ${i}`);
+    }
+  }
+});
+
+test('hue rotate matches the CSS filter matrix', () => {
+  // Pinned to the SVG feColorMatrix values: red at 120° is exactly what
+  // `filter: hue-rotate(120deg)` renders, negative channels clipped and all.
+  const img = image(1, 1, () => [255, 0, 0, 255]);
+  getEffect('huerotate').apply(img, { params: { angle: 120 }, rng: rng() });
+  const [r, g, b, a] = at(img, 0, 0);
+  assert.equal(a, 255);
+  assert.ok(Math.abs(r - 0) <= 1 && Math.abs(g - 113) <= 1 && Math.abs(b - 0) <= 1,
+    `expected ~[0, 113, 0], got ${[r, g, b]}`);
+  assert.ok(g > r && g > b, 'red rotated 120° reads green');
+});
+
+test('hue rotate roughly keeps luminance where nothing clips', () => {
+  // The matrix only approximates luminance preservation, and clipping at 0
+  // breaks it outright for fully saturated colours — so measure a colour that
+  // stays inside the gamut through the rotation.
+  const img = image(1, 1, () => [180, 120, 90, 255]);
+  const before = 0.2126 * 180 + 0.7152 * 120 + 0.0722 * 90;
+  getEffect('huerotate').apply(img, { params: { angle: 90 }, rng: rng() });
+  const [r, g, b] = at(img, 0, 0);
+  const after = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  assert.ok(Math.abs(after - before) < 6, `luminance drifted: ${after} vs ${before}`);
+});
+
+test('hue rotate leaves greys grey', () => {
+  const img = image(4, 1, () => [128, 128, 128, 255]);
+  getEffect('huerotate').apply(img, { params: { angle: 200 }, rng: rng() });
+  const [r, g, b] = at(img, 0, 0);
+  assert.ok(Math.abs(r - 128) <= 1 && Math.abs(g - 128) <= 1 && Math.abs(b - 128) <= 1,
+    `grey should survive rotation, got ${[r, g, b]}`);
+});
+
+test('colour params are validated and randomised as usable colours', () => {
+  const colorize = getEffect('colorize');
+  assert.equal(normalizeParams(colorize, { color: '#ABCDEF' }).color, '#abcdef');
+  assert.equal(normalizeParams(colorize, { color: 'red' }).color, colorize.params[0].default);
+  assert.equal(normalizeParams(colorize, { color: '#fff' }).color, colorize.params[0].default);
+  assert.equal(normalizeParams(colorize, {}).color, colorize.params[0].default);
+
+  const seen = new Set();
+  for (let i = 0; i < 50; i++) {
+    const item = randomChain(createRng(`c${i}`)).find((entry) => entry.id === 'colorize');
+    if (!item) continue;
+    assert.match(item.params.color, /^#[0-9a-f]{6}$/);
+    seen.add(item.params.color);
+  }
+  assert.ok(seen.size > 5, `random colours should vary, saw ${seen.size}`);
+});
+
+test('a colour param round-trips through JSON', () => {
+  const chain = [createItem('colorize', { color: '#12ab34', amount: 70 })];
+  const parsed = chainFromJSON(chainToJSON({ chain, seed: 's' }));
+  assert.equal(parsed.chain[0].params.color, '#12ab34');
+  assert.equal(parsed.chain[0].params.amount, 70);
+});
+
+/** Default params for an effect, so tests can override just what they mean to. */
+function defaults(id) {
+  return normalizeParams(getEffect(id), {});
+}

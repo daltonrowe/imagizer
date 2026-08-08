@@ -11,15 +11,32 @@
  * randomness, while re-running the same chain reproduces both exactly.
  */
 
-import { clamp } from './shared.js';
+import { clamp, hslToRgb, rgbToHex } from './shared.js';
 import blur from './blur.js';
+import huerotate from './huerotate.js';
 import greyscale from './greyscale.js';
+import colorize from './colorize.js';
 import pixelsort from './pixelsort.js';
 import threshold from './threshold.js';
+import channelthreshold from './channelthreshold.js';
 import atkinson from './atkinson.js';
+import bayer from './bayer.js';
+import randomdither from './randomdither.js';
 import reblend from './reblend.js';
 
-export const EFFECTS = [blur, greyscale, pixelsort, threshold, atkinson, reblend];
+export const EFFECTS = [
+  blur,
+  huerotate,
+  greyscale,
+  colorize,
+  pixelsort,
+  threshold,
+  channelthreshold,
+  atkinson,
+  bayer,
+  randomdither,
+  reblend,
+];
 
 const BY_ID = new Map(EFFECTS.map((effect) => [effect.id, effect]));
 
@@ -39,6 +56,8 @@ export function normalizeParams(effect, params = {}) {
     const value = params[spec.key];
     if (spec.type === 'toggle') {
       out[spec.key] = typeof value === 'boolean' ? value : spec.default;
+    } else if (spec.type === 'color') {
+      out[spec.key] = /^#[0-9a-f]{6}$/i.test(value) ? String(value).toLowerCase() : spec.default;
     } else if (spec.type === 'select') {
       const allowed = spec.options.some((option) => option.value === value);
       out[spec.key] = allowed ? value : spec.default;
@@ -135,6 +154,10 @@ function randomParams(effect, rng) {
   for (const spec of effect.params) {
     if (spec.type === 'toggle') {
       params[spec.key] = rng.bool(0.3);
+    } else if (spec.type === 'color') {
+      // Drawn in HSL so random colours are vivid and mid-toned rather than the
+      // muddy greys that uniform RGB mostly produces.
+      params[spec.key] = rgbToHex(...hslToRgb(rng.int(0, 359), rng.int(45, 90) / 100, rng.int(38, 68) / 100));
     } else if (spec.type === 'select') {
       params[spec.key] = rng.pick(spec.options).value;
     } else {
