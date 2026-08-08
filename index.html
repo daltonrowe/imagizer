@@ -35,13 +35,23 @@
   </section>
 
   <section class="controls" aria-label="Editor settings">
-    <div class="steps" role="tablist" aria-label="Editing steps">
-      <button class="step" id="tabCrop" type="button" role="tab" aria-selected="true" aria-controls="paneCrop">
-        <span class="step-num">1</span> Crop
-      </button>
-      <span class="step-arrow" aria-hidden="true">&rarr;</span>
-      <button class="step" id="tabEffects" type="button" role="tab" aria-selected="false" aria-controls="paneEffects">
-        <span class="step-num">2</span> Effects
+    <div class="stepbar">
+      <div class="steps" role="tablist" aria-label="Editing steps">
+        <button class="step" id="tabCrop" type="button" role="tab" aria-selected="true" aria-controls="paneCrop">
+          <span class="step-num">1</span> Crop
+        </button>
+        <span class="step-arrow" aria-hidden="true">&rarr;</span>
+        <button class="step" id="tabEffects" type="button" role="tab" aria-selected="false" aria-controls="paneEffects">
+          <span class="step-num">2</span> Effects
+        </button>
+      </div>
+      <button class="gear" id="tabSettings" type="button" aria-expanded="false" aria-controls="paneSettings"
+              title="Seed, export and chain JSON" aria-label="Settings">
+        <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
       </button>
     </div>
 
@@ -82,44 +92,41 @@
 
       <ol id="chain" class="chain"></ol>
       <p id="chainEmpty" class="hint hint-empty">No effects yet. Add one, or hit Randomize for a chain of 2&ndash;5.</p>
+    </div><!-- /paneEffects -->
 
-      <details class="json" id="jsonPanel">
-        <summary>Chain JSON</summary>
-        <textarea id="json" class="json-text" rows="7" spellcheck="false" autocapitalize="off"
+    <div class="pane" id="paneSettings" hidden>
+      <div class="row row-inline row-seed">
+        <label class="inline-label" for="seed">Seed</label>
+        <input id="seed" class="seed-input" type="text" autocomplete="off" autocapitalize="characters"
+               autocorrect="off" spellcheck="false" maxlength="32">
+        <button id="randomize" class="btn btn-icon" type="button" title="Randomize seed" aria-label="Randomize seed">&#127922;</button>
+      </div>
+
+      <div class="row row-inline row-actions">
+        <div class="field field-format">
+          <label class="visually-hidden" for="format">Export format</label>
+          <select id="format">
+            <option value="image/png">PNG</option>
+            <option value="image/jpeg">JPEG</option>
+          </select>
+        </div>
+        <button id="export" class="btn btn-primary" type="button" disabled>Export crop</button>
+      </div>
+
+      <div class="row">
+        <label class="row-label" for="json">Chain JSON</label>
+        <textarea id="json" class="json-text" rows="6" spellcheck="false" autocapitalize="off"
                   autocorrect="off" aria-label="Effect chain as JSON"></textarea>
         <div class="row-inline json-actions">
           <button id="jsonCopy" class="btn" type="button">Copy</button>
           <button id="jsonDownload" class="btn" type="button">Download</button>
           <button id="jsonApply" class="btn btn-primary" type="button">Apply</button>
         </div>
-      </details>
-    </div><!-- /paneEffects -->
+      </div>
+    </div><!-- /paneSettings -->
     </div><!-- /panes -->
 
     <div class="footer">
-      <details class="config" id="configPanel">
-        <summary>Seed &amp; export</summary>
-        <div class="config-body">
-          <div class="row row-inline row-seed">
-            <label class="inline-label" for="seed">Seed</label>
-            <input id="seed" class="seed-input" type="text" autocomplete="off" autocapitalize="characters"
-                   autocorrect="off" spellcheck="false" maxlength="32">
-            <button id="randomize" class="btn btn-icon" type="button" title="Randomize seed" aria-label="Randomize seed">&#127922;</button>
-          </div>
-
-          <div class="row row-inline row-actions">
-            <div class="field field-format">
-              <label class="visually-hidden" for="format">Export format</label>
-              <select id="format">
-                <option value="image/png">PNG</option>
-                <option value="image/jpeg">JPEG</option>
-              </select>
-            </div>
-            <button id="export" class="btn btn-primary" type="button" disabled>Export crop</button>
-          </div>
-        </div>
-      </details>
-
       <p class="hint">Drag to position &middot; pinch to zoom &middot; double&#8209;tap to reset</p>
     </div><!-- /footer -->
   </section>

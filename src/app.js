@@ -46,12 +46,13 @@ const el = {
   tabEffects: document.getElementById('tabEffects'),
   paneCrop: document.getElementById('paneCrop'),
   paneEffects: document.getElementById('paneEffects'),
+  paneSettings: document.getElementById('paneSettings'),
+  tabSettings: document.getElementById('tabSettings'),
   chainList: document.getElementById('chain'),
   chainEmpty: document.getElementById('chainEmpty'),
   addEffect: document.getElementById('addEffect'),
   randomizeChain: document.getElementById('randomizeChain'),
   json: document.getElementById('json'),
-  jsonPanel: document.getElementById('jsonPanel'),
   jsonCopy: document.getElementById('jsonCopy'),
   jsonDownload: document.getElementById('jsonDownload'),
   jsonApply: document.getElementById('jsonApply'),
@@ -336,29 +337,52 @@ el.jsonApply.addEventListener('click', () => {
  */
 let step = 'crop';
 
-function showStep(next) {
-  step = next === 'effects' ? 'effects' : 'crop';
+/**
+ * Settings is a panel layered over whichever step is current, not a third step:
+ * seed, export and the chain JSON apply to both, and closing it has to put you
+ * back where you were.
+ */
+let settingsOpen = false;
+
+function syncPanes() {
   const effects = step === 'effects';
 
   el.tabCrop.setAttribute('aria-selected', String(!effects));
   el.tabEffects.setAttribute('aria-selected', String(effects));
-  el.paneCrop.hidden = effects;
-  el.paneEffects.hidden = !effects;
-  // Step 2 shows the finished crop alone — the source photo around it is
-  // framing context that belongs to step 1, and gestures go with it.
+  el.tabSettings.setAttribute('aria-expanded', String(settingsOpen));
+
+  el.paneCrop.hidden = settingsOpen || effects;
+  el.paneEffects.hidden = settingsOpen || !effects;
+  el.paneSettings.hidden = !settingsOpen;
+
+  // The stage keeps showing the current step while settings are open, so the
+  // panel never changes what you are looking at. Step 2 shows the finished crop
+  // alone — the source photo around it is framing context for step 1, and
+  // gestures go with it.
   el.stage.classList.toggle('result', effects);
   cropper.setInteractive(!effects);
   el.hint.textContent = effects
     ? 'The export runs this chain at full crop size'
     : 'Drag to position · pinch to zoom · double-tap to reset';
+}
 
-  invalidatePreview();
+function showStep(next) {
+  const previous = step;
+  step = next === 'effects' ? 'effects' : 'crop';
+  settingsOpen = false;
+  syncPanes();
+  // Only a step change alters what the stage renders; settings does not.
+  if (step !== previous) invalidatePreview();
 }
 
 const showEffectsTab = () => showStep('effects');
 
 el.tabCrop.addEventListener('click', () => showStep('crop'));
 el.tabEffects.addEventListener('click', () => showStep('effects'));
+el.tabSettings.addEventListener('click', () => {
+  settingsOpen = !settingsOpen;
+  syncPanes();
+});
 
 // ---------- preview ----------
 
@@ -676,6 +700,7 @@ el.addEffect.replaceChildren(
 renderPresets();
 renderChain();
 syncChainMeta();
-showStep('crop');
+syncPanes();
+invalidatePreview();
 cropper.setCrop(settings.cropW, settings.cropH);
 saveSettings(settings); // pin the defaults on a first visit

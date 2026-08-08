@@ -59,10 +59,11 @@ the crop whether or not the chain has anything in it, since the cropped image is
 what the chain is applied to. Changing the crop afterwards is fine — step 2
 re-renders from the new crop.
 
-The numbered stepper is the navigation, in both directions. Seed, export format
-and the export button sit together behind a **Seed & export** disclosure at the
-bottom: they are set once and then left alone, so they do not compete with the
-crop and effect controls for the little vertical room a phone has.
+The numbered stepper is the navigation, in both directions. Beside it, a gear
+opens a settings panel holding the seed, the export controls and the chain JSON
+— everything that applies to both steps rather than to one of them. It layers
+over whichever step is current and leaves the stage alone, so opening it never
+changes what you are looking at; picking a step closes it again.
 
 ## Effects
 
@@ -89,8 +90,8 @@ resolution-dependent, so expect the export to be finer-grained than the preview.
 
 ### Chain JSON
 
-The **Chain JSON** panel serialises the chain, the seed and the crop size as a
-preset you can copy, download, or paste back in:
+The gear panel's **Chain JSON** box serialises the chain, the seed and the crop
+size as a preset you can copy, download, or paste back in:
 
 ```json
 {

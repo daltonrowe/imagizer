@@ -231,7 +231,38 @@ body {
 
 /* ---------- steps ---------- */
 
+.stepbar {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+/* The gear sits beside the tablist rather than inside it: it toggles a panel,
+   it is not a third step. */
+.gear {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.gear:hover { color: var(--text); }
+
+.gear[aria-expanded="true"] {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--accent) 22%, var(--panel));
+  color: var(--text);
+}
+
 .steps {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -283,57 +314,6 @@ body {
 }
 
 .step-arrow { flex: 0 0 auto; color: var(--muted); font-size: 12px; }
-
-/* ---------- configuration ---------- */
-
-/*
- * Seed and export live behind a disclosure: they are set once and then left
- * alone, so they should not compete with the crop and effect controls for the
- * little vertical room a phone has.
- */
-.config {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--panel-2);
-}
-
-.config > summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 10px;
-  color: var(--muted);
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  cursor: pointer;
-  list-style: none;
-}
-
-/* One disclosure treatment for both the JSON and configuration panels. */
-.config > summary::-webkit-details-marker,
-.json > summary::-webkit-details-marker { display: none; }
-
-.config > summary::before,
-.json > summary::before {
-  content: "›";
-  width: 12px;
-  font-size: 14px;
-  text-align: center;
-  transition: transform 120ms ease;
-}
-
-.config[open] > summary::before,
-.json[open] > summary::before { transform: rotate(90deg); }
-
-.config[open] > summary { border-bottom: 1px solid var(--line); }
-
-.config-body {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 10px;
-}
 
 /* Never shrink: the pane scrolls inside .panes rather than squashing its
    content out over the footer. */
@@ -458,31 +438,15 @@ body {
 
 .param-toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
 
-/* ---------- JSON panel ---------- */
-
-.json { border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
-
-.json > summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  color: var(--muted);
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  cursor: pointer;
-  list-style: none;
-}
-
-.json[open] > summary { border-bottom: 1px solid var(--line); }
+/* ---------- chain JSON ---------- */
 
 .json-text {
   display: block;
   width: 100%;
   padding: 8px 10px;
-  border: 0;
-  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
   color: var(--text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
@@ -490,7 +454,6 @@ body {
   resize: vertical;
 }
 
-.json-actions { padding: 0 10px 10px; }
 .json-actions .btn { flex: 1; padding: 8px 10px; font-size: 13px; }
 
 .row-inline {
