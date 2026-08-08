@@ -15,11 +15,15 @@
 
 import { clamp, hslToRgb, rgbToHex } from './shared.js';
 import blur from './blur.js';
+import chromatic from './chromatic.js';
 import huerotate from './huerotate.js';
 import greyscale from './greyscale.js';
 import colorize from './colorize.js';
+import bloom from './bloom.js';
+import bokeh from './bokeh.js';
 import pixelsort from './pixelsort.js';
 import channelsort from './channelsort.js';
+import channelshift from './channelshift.js';
 import slicer from './slicer.js';
 import vignette from './vignette.js';
 import spotlight from './spotlight.js';
@@ -35,11 +39,15 @@ import reblendprevious from './reblendprevious.js';
 
 export const EFFECTS = [
   blur,
+  chromatic,
   huerotate,
   greyscale,
   colorize,
+  bloom,
+  bokeh,
   pixelsort,
   channelsort,
+  channelshift,
   slicer,
   vignette,
   spotlight,

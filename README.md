@@ -82,11 +82,15 @@ input of the next. Each has its own settings:
 | Effect | What it does |
 | --- | --- |
 | **Blur** | Box blur, three passes, alpha-safe |
+| **Chromatic Aberration** | Lens fringing: red and blue part company toward the edges |
 | **Hue Rotate** | Rotates every hue by an angle |
 | **Greyscale** | Desaturates by amount |
 | **Colorize** | Tints with a chosen colour, keeping luminance |
+| **Bloom** | Blurs the highlights and screens them back as a halo |
+| **Bokeh** | Turns highlights into out-of-focus aperture discs |
 | **Pixel Sort** | Sorts bright runs into streaks; max run is a share of the line |
 | **Channel Sort** | The same sort confined to one RGB channel, tearing colours apart |
+| **Channel Shift** | Slides one channel across the frame, wrapping or not |
 | **Slicer** | Cuts the image into bands and slides each one along its length |
 | **Grid Gate** | Masks the image behind a regular grid of square or circular apertures |
 | **Vignette** | Darkens in from the edges, heaviest in the corners |
@@ -120,6 +124,36 @@ Cross shift displaces a band across the stack as well as along it, so bands land
 on their neighbours and leave their own row empty. Shifting does not wrap, so a
 band leaves a gap behind it; the toggle decides whether those gaps punch through
 to transparency, which a PNG export keeps, or land on a chosen colour.
+
+**Chromatic Aberration** and **Channel Shift** both pull the colour channels
+apart, and the difference is where. The aberration is a lens: the fringe is zero
+at the optical centre and grows outward, with Edge bias deciding how fast — 1
+scales each channel evenly, 3 keeps the middle of the frame clean and piles the
+fringing into the corners. Amount is the fringe width at the corners as a share
+of the half-diagonal, and the fringe pair chooses which channel goes out and
+which comes in. Channel Shift is flat instead: one channel, moved by a
+percentage of the width and height, which is the printing-misregistration look
+rather than a lens. It will move alpha too, which slides the cutout out from
+under its own colour.
+
+**Bloom** and **Bokeh** both spread the highlights above a threshold and screen
+the result back on, so they only ever brighten and stacking them approaches
+white instead of overshooting. Bloom blurs that layer into a halo — the sharp
+image survives underneath, which is what makes it bloom rather than blur. Bokeh
+splats each highlight as an aperture disc: circles for a lens wide open,
+hexagons for one stopped down onto its blades, rings for the doughnuts a mirror
+lens makes. A true defocus is a disc-shaped convolution costing the disc's area
+per pixel, far too slow for a live preview; splatting the highlights is what
+people recognise anyway, and it stacks over a Blur when the soft background is
+wanted too. Bokeh lays its grid out in cells across the image rather than in
+pixels and jitters each cell from its index, so the discs land in the same
+places in the preview as in the export instead of rearranging themselves on
+download.
+
+Neither touches alpha. Glow that spread past a cutout's edge would have to
+invent opacity there and quietly grow the silhouette, so instead the subject's
+own shape clips its own glow — the same choice the vignette and the aberration
+make.
 
 Pixel Sort and Channel Sort share one walk over the image and differ in what
 moves. Pixel Sort keys on luminance and moves whole pixels, so every colour in
@@ -157,9 +191,9 @@ Effects run twice at different resolutions. The preview renders at screen size,
 because a 1080×1080 crop is 1.2M pixels through five effects and that stalls a
 phone for something displayed at a quarter of the size; the export re-runs the
 chain at full crop resolution and is authoritative. Settings expressed as
-proportions — pixel sort's max run, coverage — hold at both sizes, but the
-dithers work per pixel, so expect the export to be finer-grained than the
-preview.
+proportions — pixel sort's max run, coverage, bloom's radius, bokeh's disc size
+and placement — hold at both sizes, but the dithers work per pixel, so expect
+the export to be finer-grained than the preview.
 
 ### Reblend
 

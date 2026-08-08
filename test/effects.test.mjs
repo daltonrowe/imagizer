@@ -57,10 +57,11 @@ const rng = () => createRng('test-seed');
 test('every effect is registered with the metadata the UI needs', () => {
   const ids = EFFECTS.map((e) => e.id);
   assert.deepEqual(ids.slice().sort(), [
-    'atkinson', 'bayer', 'blur', 'channelsort', 'channelthreshold', 'colorize',
-    'greyscale', 'gridgate', 'huerotate', 'pixelsort', 'posterize',
-    'randomdither', 'reblend', 'reblendprevious', 'slicer', 'spotlight',
-    'threshold', 'vignette',
+    'atkinson', 'bayer', 'bloom', 'blur', 'bokeh', 'channelshift',
+    'channelsort', 'channelthreshold', 'chromatic', 'colorize', 'greyscale',
+    'gridgate', 'huerotate', 'pixelsort', 'posterize', 'randomdither',
+    'reblend', 'reblendprevious', 'slicer', 'spotlight', 'threshold',
+    'vignette',
   ]);
   for (const effect of EFFECTS) {
     assert.equal(typeof effect.label, 'string');
@@ -1685,4 +1686,326 @@ test('a param can declare when it applies', () => {
     assert.equal(spec.showWhen({ transparent: true }), false);
     assert.equal(spec.showWhen({ transparent: false }), true);
   }
+});
+
+// ---------- chromatic aberration ----------
+
+/**
+ * A horizontal grey ramp. Every pixel has R = G = B, so any red/blue difference
+ * afterwards is the aberration and nothing else — and because the ramp is
+ * linear, that difference is proportional to how far the two channels moved
+ * apart, which makes the fringe directly measurable.
+ */
+const rampAcross = (width) => (x) => {
+  const v = Math.round((x / (width - 1)) * 255);
+  return [v, v, v, 255];
+};
+
+/** Red-minus-blue at a pixel: zero on the source, the fringe width after. */
+const fringe = (img, x, y) => {
+  const [r, , b] = at(img, x, y);
+  return Math.abs(r - b);
+};
+
+const aberrate = (over = {}, size = 81) => {
+  const img = image(size, size, rampAcross(size));
+  getEffect('chromatic').apply(img, { params: { ...defaults('chromatic'), ...over }, rng: rng() });
+  return img;
+};
+
+test('chromatic aberration leaves the optical centre alone', () => {
+  // Odd dimensions so the centre is a real pixel rather than a half-pixel.
+  const img = aberrate({ amount: 8 });
+  assert.equal(fringe(img, 40, 40), 0, 'no fringe at the centre');
+  assert.ok(fringe(img, 44, 40) < fringe(img, 76, 40), 'the fringe grows outward');
+});
+
+test('chromatic aberration fringes widen toward the edge', () => {
+  const img = aberrate({ amount: 8, bias: 1 });
+  let previous = -1;
+  // Along the centre row, so the displacement is purely horizontal and the ramp
+  // measures all of it.
+  for (const x of [44, 52, 60, 68, 76]) {
+    const value = fringe(img, x, 40);
+    assert.ok(value >= previous, `fringe shrank again at x=${x}: ${value} after ${previous}`);
+    previous = value;
+  }
+  assert.ok(previous > 4, `the outer fringe should be clearly visible, got ${previous}`);
+});
+
+test('edge bias keeps the middle of the frame clean', () => {
+  const gentle = aberrate({ amount: 8, bias: 1 });
+  const biased = aberrate({ amount: 8, bias: 3 });
+  assert.ok(
+    fringe(biased, 60, 40) < fringe(gentle, 60, 40),
+    'a higher bias should pull fringing out of the mid-frame',
+  );
+});
+
+test('the fringe pairs move in opposite directions', () => {
+  const forward = aberrate({ amount: 8, fringe: 'red-blue' });
+  const back = aberrate({ amount: 8, fringe: 'blue-red' });
+  const [r1, , b1] = at(forward, 76, 40);
+  const [r2, , b2] = at(back, 76, 40);
+  assert.deepEqual([r2, b2], [b1, r1], 'swapping the pair should swap the channels');
+});
+
+test('the green fringe moves green against both others', () => {
+  const img = aberrate({ amount: 8, fringe: 'green-magenta' });
+  const [r, g, b] = at(img, 76, 40);
+  assert.equal(r, b, 'red and blue move together as magenta');
+  assert.notEqual(g, r, 'green moves the other way');
+});
+
+test('chromatic aberration at zero amount changes nothing', () => {
+  const img = image(41, 41, rampAcross(41));
+  const copy = [...img.data];
+  getEffect('chromatic').apply(img, { params: { ...defaults('chromatic'), amount: 0 }, rng: rng() });
+  assert.deepEqual([...img.data], copy);
+});
+
+test('chromatic aberration keeps the cutout it was given', () => {
+  const img = image(41, 41, (x) => [255, 200, 100, x < 20 ? 255 : 0]);
+  getEffect('chromatic').apply(img, { params: { ...defaults('chromatic'), amount: 10 }, rng: rng() });
+  for (let y = 0; y < 41; y += 8) {
+    assert.equal(at(img, 2, y)[3], 255, 'opaque side stays opaque');
+    assert.equal(at(img, 38, y)[3], 0, 'transparent side stays transparent');
+  }
+  // The fringe next to the cutout takes the colour of what is actually there,
+  // not the transparent black beyond it.
+  const [r, g, b] = at(img, 18, 20);
+  assert.ok(r > 100 && g > 80 && b > 20, `edge went dark: ${[r, g, b]}`);
+});
+
+// ---------- channel shift ----------
+
+/** A single bright column, so a shift is a position to read off. */
+const marker = (width, height, column) =>
+  image(width, height, (x) => (x === column ? [255, 255, 255, 255] : [0, 0, 0, 255]));
+
+const shiftParams = (over = {}) => ({ ...defaults('channelshift'), ...over });
+
+/** Columns where the given channel is lit. */
+const litColumns = (img, channel) => {
+  const out = [];
+  for (let x = 0; x < img.width; x++) if (at(img, x, 0)[channel] > 128) out.push(x);
+  return out;
+};
+
+test('channel shift moves the chosen channel by a share of the width', () => {
+  const img = marker(100, 4, 10);
+  getEffect('channelshift').apply(img, { params: shiftParams({ channel: 'red', x: 10, y: 0 }), rng: rng() });
+  assert.deepEqual(litColumns(img, 0), [20], 'red moved ten percent of 100px');
+  assert.deepEqual(litColumns(img, 1), [10], 'green stayed put');
+  assert.deepEqual(litColumns(img, 2), [10], 'blue stayed put');
+});
+
+test('a negative shift moves the other way', () => {
+  const img = marker(100, 4, 40);
+  getEffect('channelshift').apply(img, { params: shiftParams({ channel: 'blue', x: -25 }), rng: rng() });
+  assert.deepEqual(litColumns(img, 2), [15]);
+});
+
+test('channel shift moves rows on the y axis', () => {
+  const img = image(4, 100, (x, y) => (y === 10 ? [255, 255, 255, 255] : [0, 0, 0, 255]));
+  getEffect('channelshift').apply(img, { params: shiftParams({ channel: 'green', x: 0, y: 20 }), rng: rng() });
+  const rows = [];
+  for (let y = 0; y < 100; y++) if (at(img, 0, y)[1] > 128) rows.push(y);
+  assert.deepEqual(rows, [30]);
+});
+
+test('wrapping brings the channel back around the far edge', () => {
+  const img = marker(100, 4, 95);
+  getEffect('channelshift').apply(img, { params: shiftParams({ channel: 'red', x: 10, wrap: true }), rng: rng() });
+  assert.deepEqual(litColumns(img, 0), [5], 'it came back around the left');
+});
+
+test('without wrapping the vacated strip takes the edge value', () => {
+  // Left edge is red, everything else black. Shifting right by 10% with no wrap
+  // should smear that red edge across the strip rather than leave a black band.
+  const img = image(100, 4, (x) => (x === 0 ? [255, 0, 0, 255] : [0, 0, 0, 255]));
+  getEffect('channelshift').apply(img, { params: shiftParams({ channel: 'red', x: 10 }), rng: rng() });
+  for (let x = 0; x <= 10; x++) {
+    assert.equal(at(img, x, 0)[0], 255, `column ${x} should hold the edge value`);
+  }
+  assert.equal(at(img, 11, 0)[0], 0, 'and stop there');
+});
+
+test('a shift too small to move a whole pixel changes nothing', () => {
+  // 0.5% of 80px is 0.4px, which rounds away. On a 100px image the same 0.5%
+  // is exactly half a pixel and rounds up to one — hence the odd width here.
+  const img = marker(80, 4, 10);
+  const copy = [...img.data];
+  getEffect('channelshift').apply(img, { params: shiftParams({ x: 0.5, y: 0 }), rng: rng() });
+  assert.deepEqual([...img.data], copy);
+});
+
+test('shifting alpha moves the cutout, not the colour', () => {
+  const img = image(100, 4, (x) => [x, 50, 60, x < 50 ? 255 : 0]);
+  getEffect('channelshift').apply(img, { params: shiftParams({ channel: 'alpha', x: 20, wrap: false }), rng: rng() });
+  assert.equal(at(img, 65, 0)[3], 255, 'the silhouette grew to the right');
+  assert.equal(at(img, 75, 0)[3], 0, 'and still ends');
+  assert.equal(at(img, 65, 0)[0], 65, 'the colour underneath never moved');
+});
+
+// ---------- bloom, bokeh ----------
+
+/** A bright square on a dark field — a highlight with somewhere to spill into. */
+const highlight = (size, box) => image(size, size, (x, y) => {
+  const inside = Math.abs(x - size / 2) < box && Math.abs(y - size / 2) < box;
+  return inside ? [255, 255, 255, 255] : [20, 20, 30, 255];
+});
+
+const applied = (id, img, over = {}) => {
+  getEffect(id).apply(img, { params: { ...defaults(id), ...over }, rng: rng() });
+  return img;
+};
+
+test('bloom spills light out of a highlight', () => {
+  const img = applied('bloom', highlight(96, 12), { threshold: 50, radius: 10, intensity: 150 });
+  const near = bright(img, 48, 62);
+  const far = bright(img, 48, 92);
+  assert.ok(near > 20, `the field beside the highlight should light up, got ${near}`);
+  assert.ok(near > far, 'and fall off with distance');
+});
+
+test('bloom only ever brightens', () => {
+  const before = highlight(64, 10);
+  const copy = [...before.data];
+  const after = applied('bloom', before, { threshold: 40 });
+  for (let i = 0; i < after.data.length; i += 4) {
+    for (let c = 0; c < 3; c++) {
+      assert.ok(after.data[i + c] >= copy[i + c], `channel ${c} at ${i} got darker`);
+    }
+  }
+});
+
+test('bloom below the threshold does nothing at all', () => {
+  const img = image(64, 64, () => [90, 90, 90, 255]);
+  const copy = [...img.data];
+  // Luma of a flat 90 is 90, well under 80% of 255.
+  applied('bloom', img, { threshold: 80 });
+  assert.deepEqual([...img.data], copy);
+});
+
+test('bloom radius is a share of the image, not a pixel count', () => {
+  // The same picture at two sizes should glow the same distance in proportion,
+  // which is what keeps the preview honest about the export.
+  const reach = (size) => {
+    const img = applied('bloom', highlight(size, size / 8), { threshold: 50, radius: 12, intensity: 200 });
+    const centre = size / 2;
+    let distance = 0;
+    for (let y = centre; y < size; y++) {
+      if (bright(img, centre, y) > 40) distance = y - centre;
+    }
+    return distance / size;
+  };
+  const small = reach(64);
+  const large = reach(128);
+  assert.ok(small > 0.1, `the glow should reach somewhere, got ${small}`);
+  assert.ok(Math.abs(small - large) < 0.04, `reach drifted with size: ${small} vs ${large}`);
+});
+
+for (const id of ['bloom', 'bokeh']) {
+  test(`${id} at zero intensity changes nothing`, () => {
+    const img = highlight(64, 10);
+    const copy = [...img.data];
+    applied(id, img, { intensity: 0 });
+    assert.deepEqual([...img.data], copy);
+  });
+
+  test(`${id} leaves alpha alone and stains nothing transparent`, () => {
+    const img = image(64, 64, (x) => [255, 255, 255, x < 32 ? 255 : 0]);
+    const after = applied(id, img, { threshold: 20 });
+    for (let y = 0; y < 64; y += 8) {
+      assert.equal(at(after, 10, y)[3], 255, 'opaque stays opaque');
+      assert.equal(at(after, 50, y)[3], 0, 'transparent stays transparent');
+      assert.deepEqual(at(after, 50, y).slice(0, 3), [255, 255, 255], 'and keeps the colour it had');
+    }
+  });
+}
+
+test('bokeh spreads highlights past their own edges', () => {
+  // The square ends at y = 84. Discs are centred on samples inside it and reach
+  // at most a radius past that, so row 88 is spillover and row 110 is beyond
+  // anything the effect could touch — which is the difference between discs and
+  // a general brightening.
+  const img = applied('bokeh', highlight(128, 20), { threshold: 40, size: 12, density: 80, intensity: 150 });
+  const litOn = (row) => {
+    let lit = 0;
+    for (let x = 0; x < 128; x++) if (bright(img, x, row) > 30) lit++;
+    return lit;
+  };
+  assert.ok(litOn(88) > 0, 'discs should spill below the highlight');
+  assert.equal(litOn(110), 0, 'and not reach the far side of the frame');
+});
+
+test('bokeh places its discs the same way at any resolution', () => {
+  // Placement comes from the cell index, not the pixel, so the same look
+  // survives the jump from preview size to export size.
+  //
+  // The fixture has to be smooth. Against a hard-edged highlight a sample point
+  // that rounds just inside the edge at one size and just outside at the other
+  // flips a whole disc on or off, and the test then measures that one flip
+  // (drift 30) rather than the placement it means to check. Where the tone
+  // ramps, a sample near the threshold carries almost no weight either way.
+  const cone = (size) => (x, y) => {
+    const centre = (size - 1) / 2;
+    const distance = Math.hypot(x - centre, y - centre) / (size / 2);
+    const v = Math.max(0, Math.min(255, Math.round(255 * (1 - distance))));
+    return [v, v, v, 255];
+  };
+
+  const grid = (size) => {
+    const img = applied('bokeh', image(size, size, cone(size)), { threshold: 40, size: 10, density: 60, intensity: 150 });
+    const cells = 8;
+    const step = size / cells;
+    const out = [];
+    for (let cy = 0; cy < cells; cy++) {
+      for (let cx = 0; cx < cells; cx++) {
+        let sum = 0;
+        for (let y = cy * step; y < (cy + 1) * step; y++) {
+          for (let x = cx * step; x < (cx + 1) * step; x++) sum += bright(img, x, y);
+        }
+        out.push(sum / (step * step));
+      }
+    }
+    return out;
+  };
+  const small = grid(96);
+  const large = grid(192);
+  const drift = small.map((v, i) => Math.abs(v - large[i]));
+  const worst = Math.max(...drift);
+  assert.ok(worst < 6, `cell brightness drifted by ${worst.toFixed(1)} between sizes`);
+});
+
+test('the aperture shape decides how much light lands', () => {
+  // Flat and bright everywhere, so every cell fires and the only difference is
+  // the shape of what it splats. The hexagon here reaches 2/root-3 of the
+  // radius across its flats, so it covers more than the circle; the ring is an
+  // annulus, so it covers less.
+  const total = (shape) => {
+    const img = image(96, 96, () => [200, 200, 200, 255]);
+    const before = [...img.data];
+    applied('bokeh', img, { shape, threshold: 20, size: 8, density: 50, intensity: 25 });
+    let sum = 0;
+    for (let i = 0; i < img.data.length; i += 4) sum += img.data[i] - before[i];
+    return sum;
+  };
+  const circle = total('circle');
+  const hexagon = total('hexagon');
+  const ring = total('ring');
+  assert.ok(circle > 0, 'a circle should add light');
+  assert.ok(ring < circle, `ring ${ring} should add less than circle ${circle}`);
+  assert.ok(hexagon > circle, `hexagon ${hexagon} should add more than circle ${circle}`);
+});
+
+test('bokeh is reproducible from the seed and moves with it', () => {
+  const run = (seed) => {
+    const img = highlight(96, 24);
+    getEffect('bokeh').apply(img, { params: defaults('bokeh'), rng: createRng(seed) });
+    return [...img.data];
+  };
+  assert.deepEqual(run('one'), run('one'), 'same seed, same discs');
+  assert.notDeepEqual(run('one'), run('two'), 'a different seed should move them');
 });
