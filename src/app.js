@@ -11,7 +11,7 @@ import {
   chainToJSON,
   chainFromJSON,
 } from './effects/index.js';
-import { renderPipeline, hasActiveEffects } from './pipeline.js';
+import { renderPipeline } from './pipeline.js';
 
 const PRESETS = [
   { label: 'Square', w: 1080, h: 1080 },
@@ -359,6 +359,11 @@ function showStep(next) {
   el.paneEffects.hidden = !effects;
   el.toCrop.hidden = !effects;
   el.toEffects.hidden = effects;
+
+  // Step 2 shows the finished crop alone — the source photo around it is
+  // framing context that belongs to step 1, and gestures go with it.
+  el.stage.classList.toggle('result', effects);
+  cropper.setInteractive(!effects);
   el.hint.textContent = effects
     ? 'Step 2 of 2 · the export runs this chain at full crop size'
     : 'Step 1 of 2 · drag to position, pinch to zoom, double-tap to reset';
@@ -403,9 +408,10 @@ function invalidatePreview() {
 
 function renderPreview() {
   const frame = cropper.getFrame();
-  // Step 1 shows the untouched photo you are framing; the processed result
-  // belongs to step 2, which is what makes the two stages legible.
-  if (step !== 'effects' || !cropper.hasSource() || !frame || !hasActiveEffects(chain)) {
+  // Step 1 shows the untouched photo you are framing. Step 2 shows the crop on
+  // its own — always, even with an empty chain, because the cropped image is
+  // what the chain is applied to and the stage has nothing else on it.
+  if (step !== 'effects' || !cropper.hasSource() || !frame) {
     el.preview.hidden = true;
     return;
   }
@@ -442,17 +448,9 @@ function positionPreview(frame) {
   el.preview.style.transform = `translate(${frame.left}px, ${frame.top}px)`;
 }
 
-// While the photo is being moved, show the untouched image — re-running the
-// chain on every pointer move would lag the drag, and positioning is easier
-// against the real photo anyway.
-el.stage.addEventListener('pointerdown', () => {
-  if (!el.preview.hidden) el.preview.hidden = true;
-  clearTimeout(previewTimer);
-}, true);
-
-for (const event of ['pointerup', 'pointercancel', 'wheel']) {
-  el.stage.addEventListener(event, schedulePreview, true);
-}
+// No gesture handling for the preview: framing only happens on step 1, where
+// the preview is hidden anyway, and hiding it on a stray tap during step 2
+// would blank the stage with nothing to bring it back.
 
 // ---------- crop size ----------
 

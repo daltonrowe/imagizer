@@ -138,6 +138,15 @@ body {
   box-shadow: 0 0 0 100vmax rgba(6, 7, 11, 0.62);
 }
 
+/*
+ * Step 2 — the result on its own. The source photo is hidden rather than dimmed
+ * around the crop, so what is on screen is exactly what will be exported, and
+ * the mask goes with it: there is nothing left outside the frame to play down.
+ */
+.stage.result { cursor: default; }
+.stage.result .layer-host { display: none; }
+.stage.result .frame { box-shadow: none; border-color: rgba(255, 255, 255, 0.25); }
+
 /* rule-of-thirds guides, only while the user is moving the photo */
 .frame::before,
 .frame::after {

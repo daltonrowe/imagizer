@@ -26,6 +26,7 @@ export function createCropper({ stage, layerHost, frame, onChange }) {
   let pinch = null;          // { distance, zoom, midpoint }
   let lastTap = 0;
   let lastTapPos = { x: 0, y: 0 };
+  let interactive = true;    // off once framing is done and we are showing the result
 
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -167,7 +168,7 @@ export function createCropper({ stage, layerHost, frame, onChange }) {
   }
 
   function onPointerDown(event) {
-    if (!source) return;
+    if (!source || !interactive) return;
     capture(event.pointerId, true);
     pointers.set(event.pointerId, stagePoint(event));
     stage.classList.add('dragging');
@@ -220,7 +221,7 @@ export function createCropper({ stage, layerHost, frame, onChange }) {
   }
 
   function onWheel(event) {
-    if (!source) return;
+    if (!source || !interactive) return;
     event.preventDefault();
     const point = stagePoint(event);
     // ctrlKey means a trackpad pinch; both gestures want the same response.
@@ -233,7 +234,7 @@ export function createCropper({ stage, layerHost, frame, onChange }) {
   stage.addEventListener('pointerup', onPointerUp);
   stage.addEventListener('pointercancel', onPointerUp);
   stage.addEventListener('wheel', onWheel, { passive: false });
-  stage.addEventListener('dblclick', reset);
+  stage.addEventListener('dblclick', () => { if (interactive) reset(); });
 
   // ---------- public API ----------
 
@@ -295,6 +296,19 @@ export function createCropper({ stage, layerHost, frame, onChange }) {
     ctx.drawImage(source, start.x, start.y, view.w, view.h, 0, 0, width, height);
   }
 
+  /**
+   * Enable or disable framing gestures. Positioning belongs to the crop step;
+   * once the stage is showing the finished crop there is no surrounding photo
+   * to drag against, so a pan there would just scrub an image that isn't shown.
+   */
+  function setInteractive(on) {
+    interactive = Boolean(on);
+    if (interactive) return;
+    pointers.clear();
+    pinch = null;
+    stage.classList.remove('dragging');
+  }
+
   /** Where the crop frame sits within the stage, in CSS pixels. */
   function getFrame() {
     if (!layout) return null;
@@ -311,6 +325,7 @@ export function createCropper({ stage, layerHost, frame, onChange }) {
     // Step one of the render pipeline; see src/pipeline.js for where it is run.
     drawCrop,
     getFrame,
+    setInteractive,
     hasSource: () => Boolean(source),
     getStats: stats,
   };

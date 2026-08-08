@@ -48,11 +48,19 @@ asks for more pixels than the photo can supply at the current zoom.
 ## Two steps
 
 The editor is two ordered steps, mirroring the pipeline: **1 Crop** frames the
-photo, **2 Effects** processes what was framed. The stage follows along — step 1
-shows the untouched photo you are positioning, step 2 shows the processed result
-inside the frame — so the preview itself tells you which stage you are looking
-at. Changing the crop after adding effects is fine; step 2 re-renders from the
-new crop.
+photo, **2 Effects** processes what was framed.
+
+The stage follows the step, so the preview itself tells you which stage you are
+in. Step 1 shows the whole photo, dimmed outside the crop frame, because framing
+needs the surrounding context. Step 2 drops the source entirely and shows only
+the finished crop at its export size — what is on screen is what the file will
+contain, with nothing bleeding in around it.
+
+Framing gestures belong to step 1 for the same reason: with no photo behind the
+crop, a pan on step 2 would scrub an image that isn't on screen. Step 2 renders
+the crop whether or not the chain has anything in it, since the cropped image is
+what the chain is applied to. Changing the crop afterwards is fine — step 2
+re-renders from the new crop.
 
 ## Effects
 
