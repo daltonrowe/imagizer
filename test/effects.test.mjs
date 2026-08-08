@@ -56,9 +56,9 @@ const rng = () => createRng('test-seed');
 test('every effect is registered with the metadata the UI needs', () => {
   const ids = EFFECTS.map((e) => e.id);
   assert.deepEqual(ids.slice().sort(), [
-    'atkinson', 'bayer', 'blur', 'channelthreshold', 'colorize', 'greyscale',
-    'huerotate', 'pixelsort', 'randomdither', 'reblend', 'spotlight',
-    'threshold', 'vignette',
+    'atkinson', 'bayer', 'blur', 'channelsort', 'channelthreshold', 'colorize',
+    'greyscale', 'huerotate', 'pixelsort', 'randomdither', 'reblend',
+    'spotlight', 'threshold', 'vignette',
   ]);
   for (const effect of EFFECTS) {
     assert.equal(typeof effect.label, 'string');
@@ -976,4 +976,144 @@ test('the falloff survives a 1px image without dividing by zero', () => {
     getEffect(id).apply(img, { params: defaults(id), rng: rng() });
     assert.ok(Number.isFinite(at(img, 0, 0)[0]), `${id} produced a non-finite pixel`);
   }
+});
+
+// ---------- channel sort ----------
+
+/** Independent per-channel values, all bright enough to clear a 0 threshold. */
+const channels = (x, y) => [
+  30 + ((x * 97 + y * 11) % 220),
+  30 + ((x * 53 + y * 29) % 220),
+  30 + ((x * 31 + y * 71) % 220),
+  255,
+];
+
+const channelOf = (img, index) =>
+  [...img.data].filter((_, i) => i % 4 === index);
+
+const sortParams = (over = {}) => ({
+  channel: 'red', direction: 'horizontal', threshold: 0,
+  maxRun: 100, coverage: 100, reverse: false, ...over,
+});
+
+test('channel sort moves only the channel it was given', () => {
+  for (const [name, index] of [['red', 0], ['green', 1], ['blue', 2]]) {
+    const img = image(40, 12, channels);
+    const before = [0, 1, 2, 3].map((i) => channelOf(img, i));
+
+    getEffect('channelsort').apply(img, { params: sortParams({ channel: name }), rng: rng() });
+
+    for (const other of [0, 1, 2, 3]) {
+      const after = channelOf(img, other);
+      if (other === index) {
+        assert.notDeepEqual(after, before[other], `${name} channel should have moved`);
+      } else {
+        assert.deepEqual(after, before[other], `${name} sort disturbed channel ${other}`);
+      }
+    }
+  }
+});
+
+test('channel sort leaves the run sorted in that channel', () => {
+  const img = image(48, 1, channels);
+  getEffect('channelsort').apply(img, { params: sortParams({ channel: 'green' }), rng: rng() });
+  for (let x = 1; x < 48; x++) {
+    assert.ok(at(img, x, 1 - 1)[1] >= at(img, x - 1, 0)[1], `green descended at x=${x}`);
+  }
+});
+
+test('channel sort reverses, and works vertically', () => {
+  const down = image(1, 48, channels);
+  getEffect('channelsort').apply(down, {
+    params: sortParams({ channel: 'blue', direction: 'vertical', reverse: true }),
+    rng: rng(),
+  });
+  for (let y = 1; y < 48; y++) {
+    assert.ok(at(down, 0, y)[2] <= at(down, 0, y - 1)[2], `blue rose at y=${y}`);
+  }
+});
+
+test('channel sort thresholds on its channel, not luminance', () => {
+  // Saturated red: high in the red channel (178-240), low in luminance (~51).
+  // Descending, so sorting it ascending is guaranteed to change something — an
+  // already-ascending fixture makes the sort a no-op and the test vacuous.
+  const reds = (x) => [240 - x * 2, 0, 0, 255];
+
+  const byChannel = image(32, 1, reds);
+  getEffect('channelsort').apply(byChannel, { params: sortParams({ channel: 'red', threshold: 150 }), rng: rng() });
+
+  const byLuma = image(32, 1, reds);
+  getEffect('pixelsort').apply(byLuma, {
+    params: { direction: 'horizontal', threshold: 150, maxRun: 100, coverage: 100, reverse: false },
+    rng: rng(),
+  });
+
+  const original = channelOf(image(32, 1, reds), 0);
+  assert.notDeepEqual(channelOf(byChannel, 0), original, 'the red channel clears a red threshold');
+  assert.deepEqual(channelOf(byLuma, 0), original, 'the same pixels never clear a luminance threshold');
+});
+
+test('channel sort invents colours; pixel sort only rearranges them', () => {
+  const tuples = (img) => {
+    const set = new Set();
+    for (let i = 0; i < img.data.length; i += 4) {
+      set.add(`${img.data[i]},${img.data[i + 1]},${img.data[i + 2]}`);
+    }
+    return set;
+  };
+
+  const original = tuples(image(40, 8, channels));
+
+  const sorted = image(40, 8, channels);
+  getEffect('pixelsort').apply(sorted, {
+    params: { direction: 'horizontal', threshold: 0, maxRun: 100, coverage: 100, reverse: false },
+    rng: rng(),
+  });
+  for (const colour of tuples(sorted)) {
+    assert.ok(original.has(colour), `pixel sort produced a new colour: ${colour}`);
+  }
+
+  const torn = image(40, 8, channels);
+  getEffect('channelsort').apply(torn, { params: sortParams(), rng: rng() });
+  const invented = [...tuples(torn)].filter((colour) => !original.has(colour));
+  assert.ok(invented.length > 0, 'channel sort should pull pixels apart into new colours');
+});
+
+test('channel sort follows the seed and varies with it', () => {
+  const run = (seed) => {
+    const img = image(40, 40, channels);
+    getEffect('channelsort').apply(img, {
+      params: sortParams({ threshold: 100, maxRun: 40, coverage: 50 }),
+      rng: createRng(seed),
+    });
+    return [...img.data].join(',');
+  };
+  assert.equal(run('alpha'), run('alpha'));
+  assert.notEqual(run('alpha'), run('beta'));
+});
+
+test('each channel choice gives a different result', () => {
+  const run = (channel) => {
+    const img = image(40, 12, channels);
+    getEffect('channelsort').apply(img, { params: sortParams({ channel }), rng: rng() });
+    return [...img.data].join(',');
+  };
+  const results = ['red', 'green', 'blue'].map(run);
+  assert.equal(new Set(results).size, 3, 'the three channels should not agree');
+});
+
+test('channel sort shares the run rules with pixel sort', () => {
+  // Max run is a share of the line here too, so the structure is resolution
+  // independent in the same way.
+  const runs = (width, percent) => {
+    const img = image(width, 1, (x) => { const v = 250 - Math.floor((x / width) * 40); return [v, 20, 20, 255]; });
+    getEffect('channelsort').apply(img, {
+      params: sortParams({ channel: 'red', threshold: 100, maxRun: percent }),
+      rng: rng(),
+    });
+    let resets = 0;
+    for (let x = 1; x < width; x++) if (at(img, x, 0)[0] < at(img, x - 1, 0)[0]) resets++;
+    return resets;
+  };
+  assert.equal(runs(200, 25), runs(400, 25), 'same share, same structure at either size');
 });

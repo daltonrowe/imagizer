@@ -86,6 +86,7 @@ input of the next. Each has its own settings:
 | **Greyscale** | Desaturates by amount |
 | **Colorize** | Tints with a chosen colour, keeping luminance |
 | **Pixel Sort** | Sorts bright runs into streaks; max run is a share of the line |
+| **Channel Sort** | The same sort confined to one RGB channel, tearing colours apart |
 | **Vignette** | Darkens in from the edges, heaviest in the corners |
 | **Spotlight** | Darkens everything outside a circle in the middle |
 | **Threshold BW** | One luminance cut, two tones |
@@ -94,6 +95,14 @@ input of the next. Each has its own settings:
 | **Bayer Dither** | Ordered dithering, a woven crosshatch |
 | **Random Dither** | A random threshold per cell — grain, not pattern |
 | **Reblend Original** | Composites the untouched crop back on top |
+
+Pixel Sort and Channel Sort share one walk over the image and differ in what
+moves. Pixel Sort keys on luminance and moves whole pixels, so every colour in
+the image survives and only its position changes. Channel Sort keys on one
+channel and moves only that channel, leaving the other two in place — pixels come
+apart rather than being reordered, and the seam shows as colour fringing. Its
+threshold reads that channel too, so a saturated red clears a red threshold it
+would never clear on luminance.
 
 Vignette and Spotlight share one falloff and differ only in how distance from
 the centre is measured. The vignette scales each axis by its own half-size, so

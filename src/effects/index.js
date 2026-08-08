@@ -17,6 +17,7 @@ import huerotate from './huerotate.js';
 import greyscale from './greyscale.js';
 import colorize from './colorize.js';
 import pixelsort from './pixelsort.js';
+import channelsort from './channelsort.js';
 import vignette from './vignette.js';
 import spotlight from './spotlight.js';
 import threshold from './threshold.js';
@@ -32,6 +33,7 @@ export const EFFECTS = [
   greyscale,
   colorize,
   pixelsort,
+  channelsort,
   vignette,
   spotlight,
   threshold,
