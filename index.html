@@ -1,1 +1,85 @@
-todo
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0e0f13">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="description" content="In-browser image effect editor. Crop, position and export photos without uploading them anywhere.">
+<title>Imagizer</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <h1>Imagizer</h1>
+  <div class="topbar-actions">
+    <span id="quality" class="badge" hidden></span>
+    <button id="pick" class="btn btn-quiet" type="button">Choose photo</button>
+  </div>
+</header>
+
+<main class="editor">
+  <section id="stage" class="stage" aria-label="Crop preview">
+    <div id="layerHost" class="layer-host">
+      <canvas id="layer" class="layer"></canvas>
+    </div>
+    <div id="frame" class="frame" aria-hidden="true"></div>
+
+    <div id="empty" class="empty">
+      <div class="empty-inner">
+        <p class="empty-title">Drop a photo here</p>
+        <p class="empty-sub">or use <strong>Choose photo</strong> to pick one from your camera roll</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="controls" aria-label="Crop settings">
+    <div class="row">
+      <label class="row-label" for="presets">Crop size</label>
+      <div class="presets" id="presets" role="group" aria-label="Crop size presets"></div>
+    </div>
+
+    <div class="row row-inline">
+      <div class="field">
+        <label for="cropW">Width</label>
+        <input id="cropW" type="number" inputmode="numeric" min="16" max="8192" step="1">
+      </div>
+      <button id="swap" class="btn btn-icon" type="button" title="Swap width and height" aria-label="Swap width and height">&#8646;</button>
+      <div class="field">
+        <label for="cropH">Height</label>
+        <input id="cropH" type="number" inputmode="numeric" min="16" max="8192" step="1">
+      </div>
+      <div class="field field-unit"><span>px</span></div>
+    </div>
+
+    <div class="row">
+      <label class="row-label" for="zoom">Zoom <span id="zoomVal" class="mono">1.00&times;</span></label>
+      <div class="row-inline">
+        <input id="zoom" class="slider" type="range" min="1" max="8" step="0.01" value="1">
+        <button id="reset" class="btn btn-quiet" type="button">Reset</button>
+      </div>
+    </div>
+
+    <div class="row row-inline row-actions">
+      <div class="field field-format">
+        <label class="visually-hidden" for="format">Export format</label>
+        <select id="format">
+          <option value="image/jpeg">JPEG</option>
+          <option value="image/png">PNG</option>
+        </select>
+      </div>
+      <button id="export" class="btn btn-primary" type="button" disabled>Export crop</button>
+    </div>
+
+    <p class="hint">Drag to position &middot; pinch to zoom &middot; double&#8209;tap to reset</p>
+  </section>
+</main>
+
+<input id="file" class="visually-hidden" type="file" accept="image/*">
+<a id="download" class="visually-hidden" download></a>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<script type="module" src="src/app.js"></script>
+</body>
+</html>
