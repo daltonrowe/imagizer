@@ -85,7 +85,7 @@ input of the next. Each has its own settings:
 | **Hue Rotate** | Rotates every hue by an angle |
 | **Greyscale** | Desaturates by amount |
 | **Colorize** | Tints with a chosen colour, keeping luminance |
-| **Pixel Sort** | Sorts bright runs into streaks |
+| **Pixel Sort** | Sorts bright runs into streaks; max run is a share of the line |
 | **Threshold BW** | One luminance cut, two tones |
 | **Channel Threshold** | A separate cut per RGB channel, up to eight colours |
 | **Atkinson Dither** | Error diffusion — the pattern follows the image |
@@ -156,6 +156,11 @@ Chain plus seed is everything needed to reproduce a look — a round trip throug
 JSON renders pixel-identical output. Importing clamps out-of-range params, drops
 effects it doesn't recognise and says how many, so a preset from a newer version
 degrades instead of failing.
+
+Version 2 renamed Pixel Sort's `maxLength` (pixels) to `maxRun` (a percentage of
+the line). Version 1 presets still load — they just fall back to the default for
+that one setting, which is a far better outcome than reading a stored `200` as a
+percentage and clamping it to an uncapped line.
 
 ### Adding an effect
 

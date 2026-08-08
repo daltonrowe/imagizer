@@ -47,7 +47,14 @@ export const RANDOM_MIN = 2;
 export const RANDOM_MAX = 5;
 
 export const CHAIN_FORMAT = 'imagizer.chain';
-export const CHAIN_VERSION = 1;
+/**
+ * 2: Pixel Sort's `maxLength` (pixels) became `maxRun` (a percentage of the
+ *    line). The rename is deliberate — a stored 200 read as a percentage would
+ *    clamp to "no cap at all", so dropping the old key and falling back to the
+ *    default degrades an old preset far more gracefully than reinterpreting it.
+ *    Presets written at version 1 still load; they just lose that one setting.
+ */
+export const CHAIN_VERSION = 2;
 
 /** Fill in defaults and clamp anything out of range or unrecognised. */
 export function normalizeParams(effect, params = {}) {

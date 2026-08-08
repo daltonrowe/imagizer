@@ -2,7 +2,9 @@ import { luma, clamp } from './shared.js';
 
 /**
  * The glitch-art staple: find runs of pixels brighter than a threshold and sort
- * them by luminance, which smears them into clean gradient streaks.
+ * them by luminance, which smears them into clean gradient streaks. Max run caps
+ * how far a streak can travel, as a percentage of the line it runs along, so the
+ * look holds at any resolution.
  *
  * This is the effect that leans hardest on the seed — which lines get sorted and
  * how the threshold wobbles per line both come from the generator, so the same
@@ -25,7 +27,7 @@ export default {
       ],
     },
     { key: 'threshold', label: 'Threshold', type: 'range', min: 0, max: 255, step: 1, default: 110, random: [60, 180] },
-    { key: 'maxLength', label: 'Max run', type: 'range', min: 4, max: 600, step: 4, default: 200, unit: 'px', random: [40, 400] },
+    { key: 'maxRun', label: 'Max run', type: 'range', min: 1, max: 100, step: 1, default: 25, unit: '%', random: [5, 60] },
     { key: 'coverage', label: 'Coverage', type: 'range', min: 5, max: 100, step: 5, default: 100, unit: '%', random: [40, 100] },
     { key: 'reverse', label: 'Reverse', type: 'toggle', default: false },
   ],
@@ -42,7 +44,10 @@ export default {
     const lineStep = vertical ? 4 : width * 4;
 
     const coverage = params.coverage / 100;
-    const maxRun = Math.max(2, Math.round(params.maxLength));
+    // A share of the line rather than a pixel count: the preview renders at
+    // screen size and the export at full crop size, so a fixed 200px cap made
+    // the two disagree — long streaks on screen, short ones in the file.
+    const maxRun = Math.max(2, Math.round((length * params.maxRun) / 100));
     const sign = params.reverse ? -1 : 1;
     const brightness = (offset) => luma(data[offset], data[offset + 1], data[offset + 2]);
 

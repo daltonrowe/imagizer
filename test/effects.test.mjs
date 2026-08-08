@@ -188,7 +188,7 @@ test('pixel sort orders bright runs and preserves the pixels', () => {
   const before = [...row.data].filter((_, i) => i % 4 === 0).sort((a, b) => a - b);
 
   getEffect('pixelsort').apply(row, {
-    params: { direction: 'horizontal', threshold: 0, maxLength: 600, coverage: 100, reverse: false },
+    params: { direction: 'horizontal', threshold: 0, maxRun: 100, coverage: 100, reverse: false },
     rng: rng(),
   });
 
@@ -200,7 +200,7 @@ test('pixel sort orders bright runs and preserves the pixels', () => {
 test('pixel sort reverses and works vertically', () => {
   const column = image(1, 32, (_x, y) => { const v = ((y * 37) % 64) + 190; return [v, v, v, 255]; });
   getEffect('pixelsort').apply(column, {
-    params: { direction: 'vertical', threshold: 0, maxLength: 600, coverage: 100, reverse: true },
+    params: { direction: 'vertical', threshold: 0, maxRun: 100, coverage: 100, reverse: true },
     rng: rng(),
   });
   const values = Array.from({ length: 32 }, (_, y) => at(column, 0, y)[0]);
@@ -211,7 +211,7 @@ test('pixel sort leaves dark pixels below the threshold alone', () => {
   const row = image(32, 1, (x) => (x < 16 ? [10, 10, 10, 255] : [200 + (x % 8), 200, 200, 255]));
   const darkBefore = Array.from({ length: 16 }, (_, x) => at(row, x, 0));
   getEffect('pixelsort').apply(row, {
-    params: { direction: 'horizontal', threshold: 128, maxLength: 600, coverage: 100, reverse: false },
+    params: { direction: 'horizontal', threshold: 128, maxRun: 100, coverage: 100, reverse: false },
     rng: rng(),
   });
   for (let x = 0; x < 16; x++) assert.deepEqual(at(row, x, 0), darkBefore[x]);
@@ -221,7 +221,7 @@ test('pixel sort is reproducible from the seed and varies with it', () => {
   const run = (seed) => {
     const img = image(48, 48, texture);
     getEffect('pixelsort').apply(img, {
-      params: { direction: 'horizontal', threshold: 100, maxLength: 200, coverage: 50, reverse: false },
+      params: { direction: 'horizontal', threshold: 100, maxRun: 40, coverage: 50, reverse: false },
       rng: createRng(seed),
     });
     return [...img.data];
@@ -304,7 +304,7 @@ test('params are clamped, snapped to step, and defaulted', () => {
   const sort = getEffect('pixelsort');
   assert.equal(normalizeParams(sort, { direction: 'diagonal' }).direction, 'horizontal');
   assert.equal(normalizeParams(sort, { reverse: 'yes' }).reverse, false);
-  assert.equal(normalizeParams(sort, { maxLength: 201 }).maxLength, 200, 'should snap to the step');
+  assert.equal(normalizeParams(getEffect('randomdither'), { amount: 103 }).amount, 105, 'should snap to the step');
 });
 
 test('normalizeChain drops unknown effects', () => {
@@ -762,3 +762,79 @@ test('a colour param round-trips through JSON', () => {
 function defaults(id) {
   return normalizeParams(getEffect(id), {});
 }
+
+test('pixel sort max run is a share of the line, not a pixel count', () => {
+  // A bright line with one long run: the cap decides how far a streak travels.
+  const run = (width, percent) => {
+    const img = image(width, 1, (x) => {
+      // Descending so every sortable run visibly changes, and bright throughout
+      // so the whole line is one candidate run.
+      const v = 255 - Math.floor((x / width) * 60);
+      return [v, v, v, 255];
+    });
+    getEffect('pixelsort').apply(img, {
+      params: { direction: 'horizontal', threshold: 100, maxRun: percent, coverage: 100, reverse: false },
+      rng: rng(),
+    });
+    // Sorting ascending within each capped block leaves a sawtooth; count the
+    // resets to recover the block size.
+    let resets = 0;
+    for (let x = 1; x < width; x++) {
+      if (at(img, x, 0)[0] < at(img, x - 1, 0)[0]) resets++;
+    }
+    return resets;
+  };
+
+  // The same percentage over a line twice as long yields the same number of
+  // blocks — that is what makes the preview and the export agree.
+  assert.equal(run(200, 25), run(400, 25), '25% should give the same structure at either size');
+  assert.equal(run(200, 50), run(400, 50), '50% likewise');
+
+  // And a smaller percentage means more, shorter runs.
+  assert.ok(run(400, 10) > run(400, 50), 'a tighter cap should chop the line into more blocks');
+});
+
+test('pixel sort max run of 100% leaves the line uncapped', () => {
+  const width = 64;
+  const img = image(width, 1, (x) => { const v = 255 - x; return [v, v, v, 255]; });
+  getEffect('pixelsort').apply(img, {
+    params: { direction: 'horizontal', threshold: 0, maxRun: 100, coverage: 100, reverse: false },
+    rng: rng(),
+  });
+  for (let x = 1; x < width; x++) {
+    assert.ok(at(img, x, 0)[0] >= at(img, x - 1, 0)[0], 'one uncapped run sorts the whole line');
+  }
+});
+
+test('pixel sort max run applies to the axis being sorted', () => {
+  // A tall, narrow image: vertical sorting should cap against the height.
+  const build = () => image(8, 200, (x, y) => { const v = 255 - Math.floor(y / 4); return [v, v, v, 255]; });
+  const vertical = build();
+  getEffect('pixelsort').apply(vertical, {
+    params: { direction: 'vertical', threshold: 100, maxRun: 25, coverage: 100, reverse: false },
+    rng: rng(),
+  });
+  let resets = 0;
+  for (let y = 1; y < 200; y++) if (at(vertical, 0, y)[0] < at(vertical, 0, y - 1)[0]) resets++;
+  assert.ok(resets >= 3, `25% of 200px should chop the column into ~4 blocks, saw ${resets + 1}`);
+});
+
+test('a version 1 preset still loads, losing only the renamed param', () => {
+  // maxLength was pixels; maxRun is a percentage. Reinterpreting 400 as 400%
+  // would clamp to 100% — a whole uncapped line — so the old key is dropped
+  // and the default applies instead.
+  const parsed = chainFromJSON(JSON.stringify({
+    format: 'imagizer.chain',
+    version: 1,
+    seed: 'old-preset',
+    effects: [{ id: 'pixelsort', params: { maxLength: 400, threshold: 90, reverse: true } }],
+  }));
+
+  assert.equal(parsed.dropped, 0, 'the effect itself still loads');
+  assert.equal(parsed.seed, 'old-preset');
+  const params = parsed.chain[0].params;
+  assert.equal(params.maxRun, getEffect('pixelsort').params.find((p) => p.key === 'maxRun').default);
+  assert.equal(params.maxLength, undefined, 'the old key is gone, not carried along');
+  assert.equal(params.threshold, 90, 'everything else survives');
+  assert.equal(params.reverse, true);
+});
