@@ -315,8 +315,6 @@ body {
   opacity: 1;
 }
 
-.step-arrow { flex: 0 0 auto; color: var(--muted); font-size: 12px; }
-
 /* Never shrink: the pane scrolls inside .panes rather than squashing its
    content out over the footer. */
 .pane {
