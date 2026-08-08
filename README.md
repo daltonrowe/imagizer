@@ -59,11 +59,16 @@ the crop whether or not the chain has anything in it, since the cropped image is
 what the chain is applied to. Changing the crop afterwards is fine — step 2
 re-renders from the new crop.
 
-The numbered stepper is the navigation, in both directions. Beside it, a gear
-opens a settings panel holding the seed, the export controls and the chain JSON
-— everything that applies to both steps rather than to one of them. It layers
-over whichever step is current and leaves the stage alone, so opening it never
-changes what you are looking at; picking a step closes it again.
+The numbered stepper is the navigation, in both directions, and **Download** sits
+below it on every screen. Beside the stepper, a gear opens a settings panel
+holding the seed, the export format and the chain JSON — everything that applies
+to both steps rather than to one of them. It layers over whichever step is
+current and leaves the stage alone, so opening it never changes what you are
+looking at; picking a step closes it again.
+
+Sliders are 44px tall with a 28px thumb — the native control is replaced
+outright, since `accent-color` cannot grow a thumb that is a few pixels wide on
+a phone.
 
 ## Effects
 

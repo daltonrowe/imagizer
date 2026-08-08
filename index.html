@@ -69,7 +69,6 @@
         <label for="cropH">Height</label>
         <input id="cropH" type="number" inputmode="numeric" min="16" max="8192" step="1">
       </div>
-      <div class="field field-unit"><span>px</span></div>
     </div>
 
     <div class="row row-inline row-zoom">
@@ -102,15 +101,12 @@
         <button id="randomize" class="btn btn-icon" type="button" title="Randomize seed" aria-label="Randomize seed">&#127922;</button>
       </div>
 
-      <div class="row row-inline row-actions">
-        <div class="field field-format">
-          <label class="visually-hidden" for="format">Export format</label>
-          <select id="format">
-            <option value="image/png">PNG</option>
-            <option value="image/jpeg">JPEG</option>
-          </select>
-        </div>
-        <button id="export" class="btn btn-primary" type="button" disabled>Export crop</button>
+      <div class="row">
+        <label class="row-label" for="format">Export format</label>
+        <select id="format">
+          <option value="image/png">PNG</option>
+          <option value="image/jpeg">JPEG</option>
+        </select>
       </div>
 
       <div class="row">
@@ -127,7 +123,7 @@
     </div><!-- /panes -->
 
     <div class="footer">
-      <p class="hint">Drag to position &middot; pinch to zoom &middot; double&#8209;tap to reset</p>
+      <button id="export" class="btn btn-primary btn-download" type="button" disabled>Download</button>
     </div><!-- /footer -->
   </section>
 </main>

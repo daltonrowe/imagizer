@@ -227,6 +227,8 @@ body {
   gap: 10px;
 }
 
+.btn-download { padding: 13px 14px; font-size: 15px; }
+
 .row { display: flex; flex-direction: column; gap: 6px; }
 
 /* ---------- steps ---------- */
@@ -514,9 +516,6 @@ body {
   letter-spacing: 0.06em;
 }
 
-.field-unit { flex: 0 0 auto; }
-.field-unit span { padding-bottom: 11px; color: var(--muted); font-size: 13px; }
-
 .field-format { flex: 0 0 auto; width: 104px; }
 
 .row-seed { align-items: center; }
@@ -554,13 +553,65 @@ input.seed-input {
   letter-spacing: 0.06em;
 }
 
-.slider {
-  flex: 1;
-  min-width: 0;
-  height: 34px;
-  accent-color: var(--accent);
+/*
+ * Sliders are the main touch control, so they get a proper target: a 44px tall
+ * input (Apple's minimum) with a 28px thumb, while the track stays visually
+ * slim. The native control is replaced outright because `accent-color` cannot
+ * grow the thumb, and the default one is a few pixels wide on a phone.
+ */
+input[type="range"] {
+  width: 100%;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  appearance: none;
+  -webkit-appearance: none;
   background: transparent;
+  cursor: pointer;
 }
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 28px;
+  height: 28px;
+  /* centres the thumb on the track: (track 6 - thumb 28) / 2 */
+  margin-top: -11px;
+  border: 2px solid var(--panel);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+
+input[type="range"]::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--panel);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+
+input[type="range"]:active::-webkit-slider-thumb { background: #8fbcff; }
+input[type="range"]:active::-moz-range-thumb { background: #8fbcff; }
+
+/*
+ * Only in a row does `flex: 1` size the slider's width. The effect params stack
+ * it in a column, where flex-basis 0 would collapse its height to the track and
+ * destroy the touch target.
+ */
+.row-inline .slider { flex: 1; min-width: 0; }
 
 .mono { font-variant-numeric: tabular-nums; letter-spacing: 0; text-transform: none; }
 

@@ -56,7 +56,6 @@ const el = {
   jsonCopy: document.getElementById('jsonCopy'),
   jsonDownload: document.getElementById('jsonDownload'),
   jsonApply: document.getElementById('jsonApply'),
-  hint: document.querySelector('.footer .hint'),
   format: document.getElementById('format'),
   exportBtn: document.getElementById('export'),
   pick: document.getElementById('pick'),
@@ -361,9 +360,6 @@ function syncPanes() {
   // gestures go with it.
   el.stage.classList.toggle('result', effects);
   cropper.setInteractive(!effects);
-  el.hint.textContent = effects
-    ? 'The export runs this chain at full crop size'
-    : 'Drag to position · pinch to zoom · double-tap to reset';
 }
 
 function showStep(next) {
