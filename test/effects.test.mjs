@@ -11,6 +11,7 @@ import {
   normalizeChain,
   normalizeParams,
   chainNeedsSource,
+  chainHistoryDepth,
   chainToJSON,
   chainFromJSON,
   RANDOM_MIN,
@@ -58,7 +59,8 @@ test('every effect is registered with the metadata the UI needs', () => {
   assert.deepEqual(ids.slice().sort(), [
     'atkinson', 'bayer', 'blur', 'channelsort', 'channelthreshold', 'colorize',
     'greyscale', 'gridgate', 'huerotate', 'pixelsort', 'posterize',
-    'randomdither', 'reblend', 'slicer', 'spotlight', 'threshold', 'vignette',
+    'randomdither', 'reblend', 'reblendprevious', 'slicer', 'spotlight',
+    'threshold', 'vignette',
   ]);
   for (const effect of EFFECTS) {
     assert.equal(typeof effect.label, 'string');
@@ -503,6 +505,117 @@ test('the chain only copies the image when an effect asks for it', () => {
     chainNeedsSource([{ ...createItem('reblend'), enabled: false }, createItem('reblend')]),
     true,
   );
+});
+
+// ---------- reblend previous ----------
+
+/** Chain prefixes used below, each leaving a distinctly coloured image. */
+const grey = () => createItem('greyscale', { amount: 100 });
+const white = () => createItem('threshold', { level: 0, softness: 0, invert: false });
+const previous = (steps, params = {}) =>
+  createItem('reblendprevious', { steps, mode: 'normal', opacity: 100, ...params });
+
+test('reblend previous at one step back recovers the stage before the last', () => {
+  // Threshold blows the image out to white; reblending one step back at full
+  // opacity puts the greyscale image straight over it again.
+  const greyOnly = render([grey()]);
+  const out = render([grey(), white(), previous(1)]);
+  assert.deepEqual([...out.data], [...greyOnly.data]);
+});
+
+test('reblend previous counts stages, not pixels of distance', () => {
+  // Two steps back from the third effect is the chain input, colour and all —
+  // one step back would still be grey.
+  const out = render([grey(), white(), previous(2)]);
+  assert.deepEqual(at(out, 0, 0), [200, 40, 40, 255]);
+});
+
+test('a step count that runs off the front of the chain lands on the input', () => {
+  const original = RED();
+  const out = render([grey(), white(), previous(8)]);
+  assert.deepEqual([...out.data], [...original.data]);
+  // ...which is exactly what Reblend Original would have given.
+  const asOriginal = render([grey(), white(), createItem('reblend', { mode: 'normal', opacity: 100 })]);
+  assert.deepEqual([...out.data], [...asOriginal.data]);
+});
+
+test('disabled effects do not count as steps', () => {
+  // The greyscale is off, so one step back is the image before the threshold —
+  // the untouched photo, not a grey one.
+  const out = render([{ ...grey(), enabled: false }, white(), previous(1)]);
+  assert.deepEqual(at(out, 0, 0), [200, 40, 40, 255]);
+});
+
+test('the first effect in a chain sees only the chain input', () => {
+  const original = RED();
+  const out = render([previous(3)]);
+  assert.deepEqual([...out.data], [...original.data], 'nothing behind it to reach for');
+});
+
+test('reblend previous still reaches back once older frames have been released', () => {
+  // Long enough that the runner has dropped frames it can no longer reach; the
+  // one step this asks for must survive that trimming.
+  const throughHue = render([grey(), createItem('huerotate', { angle: 120 }), createItem('colorize', { amount: 40, color: '#2244ff' })]);
+  const out = render([
+    grey(),
+    createItem('huerotate', { angle: 120 }),
+    createItem('colorize', { amount: 40, color: '#2244ff' }),
+    white(),
+    previous(1),
+  ]);
+  assert.deepEqual([...out.data], [...throughHue.data]);
+});
+
+test('two reblend previouses in one chain each reach their own depth', () => {
+  const greyOnly = render([grey()]);
+  const original = RED();
+  const out = render([
+    grey(),
+    white(),
+    previous(1), // back to grey
+    white(),
+    previous(4), // back to the chain input
+  ]);
+  assert.deepEqual([...out.data], [...original.data]);
+  // The intermediate step really did land on grey rather than being overwritten
+  // by luck: stopping there gives the greyscale image.
+  assert.deepEqual([...render([grey(), white(), previous(1)]).data], [...greyOnly.data]);
+});
+
+test('reblend previous honours blend mode and opacity', () => {
+  const out = render([grey(), white(), previous(2, { mode: 'multiply', opacity: 100 })]);
+  // Backdrop is pure white, so multiply hands back the source untouched.
+  assert.deepEqual(at(out, 0, 0), [200, 40, 40, 255]);
+
+  const half = render([white(), previous(1, { opacity: 50 })]);
+  const [r, g, b] = at(half, 0, 0);
+  // White backdrop, red source at half strength.
+  assert.ok(Math.abs(r - 228) <= 1, `r ${r}`);
+  assert.ok(Math.abs(g - 148) <= 1, `g ${g}`);
+  assert.ok(Math.abs(b - 148) <= 1, `b ${b}`);
+});
+
+test('reblend previous outside a chain runner is a no-op rather than a crash', () => {
+  const img = RED();
+  const copy = [...img.data];
+  getEffect('reblendprevious').apply(img, {
+    params: { steps: 2, mode: 'normal', opacity: 100 },
+    rng: rng(),
+    source: null,
+    frameAt: null,
+  });
+  assert.deepEqual([...img.data], copy);
+});
+
+test('the chain keeps history only as deep as something reaches', () => {
+  // Each frame is the size of the whole crop, so an unused depth is not free.
+  assert.equal(chainHistoryDepth([]), 0);
+  assert.equal(chainHistoryDepth([createItem('blur'), createItem('reblend')]), 0);
+  assert.equal(chainHistoryDepth([previous(1)]), 1);
+  assert.equal(chainHistoryDepth([previous(3), previous(1)]), 3);
+  assert.equal(chainHistoryDepth([{ ...previous(5), enabled: false }, previous(2)]), 2);
+  // Out-of-range values are clamped by normalizeParams before they are read.
+  assert.equal(chainHistoryDepth([createItem('reblendprevious', { steps: 99 })]), 8);
 });
 
 // ---------- bayer, random dither ----------

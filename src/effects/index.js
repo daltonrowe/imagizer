@@ -4,7 +4,9 @@
  * A chain is plain data — `[{ id, params }, ...]` — which is what makes it
  * serialisable to JSON, storable, and shareable. The output of each effect is
  * the input of the next; they mutate the image in place, so a five-stage chain
- * costs no more memory than a one-stage one.
+ * costs no more memory than a one-stage one — unless an effect asks to look
+ * back at an earlier stage, which is what `needsSource` and `historyDepth` are
+ * for.
  *
  * Every effect draws from its own stream, `rng.fork('<id>#<position>')`. Keying
  * on position as well as id means two Pixel Sorts in one chain get different
@@ -29,6 +31,7 @@ import atkinson from './atkinson.js';
 import bayer from './bayer.js';
 import randomdither from './randomdither.js';
 import reblend from './reblend.js';
+import reblendprevious from './reblendprevious.js';
 
 export const EFFECTS = [
   blur,
@@ -48,6 +51,7 @@ export const EFFECTS = [
   bayer,
   randomdither,
   reblend,
+  reblendprevious,
 ];
 
 const BY_ID = new Map(EFFECTS.map((effect) => [effect.id, effect]));
@@ -122,27 +126,73 @@ export function createItem(id, params) {
  *
  * Effects that declare `needsSource` also receive the image as it entered the
  * chain, which is what lets one composite the original back over the processed
- * result. The copy is only taken when something asks for it — it is the size of
- * the whole crop, and most chains never need it.
+ * result. Effects that declare `historyDepth(params)` instead receive
+ * `frameAt(steps)`, reaching back that many applied effects for an intermediate
+ * image.
+ *
+ * Both are opt-in, and the history is trimmed to the deepest reach any effect
+ * in the chain actually declares: a snapshot is the size of the whole crop, so
+ * a chain that cannot use one should not pay for it, and a long chain should
+ * not hold every stage it has ever produced.
  */
 export function chainNeedsSource(chain) {
   return chain.some((item) => item.enabled !== false && getEffect(item.id)?.needsSource === true);
 }
 
+/** How many applied effects back the chain can reach; 0 when nothing reaches. */
+export function chainHistoryDepth(chain) {
+  let depth = 0;
+  for (const item of chain) {
+    if (item.enabled === false) continue;
+    const effect = getEffect(item.id);
+    if (typeof effect?.historyDepth !== 'function') continue;
+    const want = effect.historyDepth(normalizeParams(effect, item.params));
+    if (Number.isFinite(want)) depth = Math.max(depth, want);
+  }
+  return depth;
+}
+
+const snapshot = (image) => ({
+  data: Uint8ClampedArray.from(image.data),
+  width: image.width,
+  height: image.height,
+});
+
 export function runChain(image, chain, rng) {
-  const source = chainNeedsSource(chain)
-    ? { data: Uint8ClampedArray.from(image.data), width: image.width, height: image.height }
-    : null;
+  const depth = chainHistoryDepth(chain);
+  // `frames[k]` is the image as it stood before the k-th applied effect ran, so
+  // `frames[0]` is the chain input — the same thing `needsSource` asks for.
+  const frames = depth > 0 || chainNeedsSource(chain) ? [snapshot(image)] : null;
+  const source = frames ? frames[0] : null;
+
+  let applied = 0;
+  // The oldest frame still held above the chain input.
+  let oldest = 1;
 
   chain.forEach((item, index) => {
     if (item.enabled === false) return;
     const effect = getEffect(item.id);
     if (!effect) return;
+
+    if (depth > 0 && applied > 0) {
+      frames[applied] = snapshot(image);
+      // Release anything past the deepest reach. Frame 0 always stays: it is
+      // where a step count that runs off the front of the chain lands.
+      while (oldest < applied - depth) frames[oldest++] = null;
+    }
+
+    const at = applied;
     effect.apply(image, {
       params: normalizeParams(effect, item.params),
       rng: rng.fork(`${item.id}#${index}`),
       source,
+      // Never the current image: 1 step back is the image before the previous
+      // effect ran, and anything deeper than the chain clamps to its input.
+      frameAt: frames
+        ? (steps) => frames[Math.max(0, at - Math.max(1, Math.round(steps)))] ?? frames[0]
+        : null,
     });
+    applied += 1;
   });
   return image;
 }

@@ -98,6 +98,7 @@ input of the next. Each has its own settings:
 | **Bayer Dither** | Ordered dithering, a woven crosshatch |
 | **Random Dither** | A random threshold per cell — grain, not pattern |
 | **Reblend Original** | Composites the untouched crop back on top |
+| **Reblend Previous** | The same, reaching back a chosen number of stages instead |
 
 **Posterize** is the same tone quantisation the dithers do, without the
 dithering, so the bands stay flat. Per channel snaps red, green and blue
@@ -171,6 +172,21 @@ The "original" is the image as it entered the chain, not the previous stage's
 output — reading the previous stage would make the effect a no-op. Effects
 declare `needsSource: true` to receive it, and the chain runner only takes the
 copy when something asks, since it is the size of the whole crop.
+
+**Reblend Previous** does the same compositing but reaches back a chosen number
+of stages: 1 is the image as it stood before the previous effect ran, 2 is
+before the two previous, and so on. That makes it a way to soften a single stage
+rather than return all the way to the photo — blur, dither, then reblend one
+step back at 50% and the dither reads as texture over a still-blurred image. A
+count that runs off the front of the chain lands on the chain input, which is
+exactly what Reblend Original would have given.
+
+Steps count *applied* effects, so muting one in the middle of the chain shifts
+what a given count reaches — which matches what the list looks like with the
+muted card greyed out. Effects declare `historyDepth(params)` to ask for
+intermediate images and receive `frameAt(steps)`; the runner keeps only as far
+back as the deepest reach in the chain, so a twelve-stage chain whose reblend
+looks one step back holds three frames, not twelve.
 
 Blending follows the W3C compositing spec rather than a plain cross-fade, so the
 modes match `mix-blend-mode` and Photoshop, and alpha composites correctly
