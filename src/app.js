@@ -1,6 +1,7 @@
 import { loadImageFile } from './image.js';
 import { createCropper, MIN_ZOOM, MAX_ZOOM } from './cropper.js';
 import { loadSettings, saveSettings, clampSize, MIN_SIZE, MAX_SIZE } from './storage.js';
+import { createRng, randomSeed, normalizeSeed } from './random.js';
 
 const PRESETS = [
   { label: 'Square', w: 1080, h: 1080 },
@@ -25,6 +26,8 @@ const el = {
   zoom: document.getElementById('zoom'),
   zoomVal: document.getElementById('zoomVal'),
   reset: document.getElementById('reset'),
+  seed: document.getElementById('seed'),
+  randomize: document.getElementById('randomize'),
   format: document.getElementById('format'),
   exportBtn: document.getElementById('export'),
   pick: document.getElementById('pick'),
@@ -43,6 +46,48 @@ const cropper = createCropper({
   frame: el.frame,
   onChange: updateReadout,
 });
+
+// ---------- seeded randomness ----------
+
+/**
+ * The root generator for the current seed. Effects take a named stream from it
+ * — `rng.fork('grain')`, `rng.fork('glitch')` — so each stays reproducible and
+ * independent of the others. Anything that needs randomness draws from here
+ * rather than Math.random(), which is what makes a look shareable by seed.
+ */
+let rng = createRng(settings.seed);
+
+/** Re-run everything downstream of the seed. */
+function reseed() {
+  rng = createRng(settings.seed);
+  applyEffects();
+}
+
+/**
+ * Where the effect stack will run. It is a no-op today — nothing draws from the
+ * rng yet — so changing the seed is currently invisible by design.
+ */
+function applyEffects() {
+  cropper.render();
+}
+
+function applySeed(next, { syncInput = true } = {}) {
+  const seed = normalizeSeed(next) || settings.seed;
+  if (syncInput) el.seed.value = seed;
+  if (seed === settings.seed) return;
+  settings.seed = seed;
+  saveSettings(settings);
+  reseed();
+}
+
+el.seed.addEventListener('input', () => applySeed(el.seed.value, { syncInput: false }));
+el.seed.addEventListener('focus', () => el.seed.select());
+// Restore the stored text if the field was left empty or padded with spaces.
+el.seed.addEventListener('blur', () => { el.seed.value = settings.seed; });
+el.randomize.addEventListener('click', () => applySeed(randomSeed()));
+
+// Debug seam: lets a console session or a test inspect the live generator.
+globalThis.imagizer = { getRng: () => rng, getSettings: () => ({ ...settings }) };
 
 // ---------- crop size ----------
 
@@ -236,6 +281,7 @@ el.zoom.max = String(MAX_ZOOM);
 el.cropW.value = settings.cropW;
 el.cropH.value = settings.cropH;
 el.format.value = settings.format;
+el.seed.value = settings.seed;
 el.stage.classList.add('empty-state');
 renderPresets();
 cropper.setCrop(settings.cropW, settings.cropH);

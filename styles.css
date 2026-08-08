@@ -29,6 +29,11 @@ body {
   overscroll-behavior: none;
 }
 
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -260,7 +265,19 @@ body {
 
 .field-format { flex: 0 0 auto; width: 104px; }
 
+.row-seed { align-items: center; }
+.row-seed .btn-icon { align-self: auto; font-size: 15px; line-height: 1; }
+
+.inline-label {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
 input[type="number"],
+input[type="text"],
 select {
   width: 100%;
   padding: 9px 10px;
@@ -273,6 +290,15 @@ select {
 }
 
 select { appearance: none; padding-right: 28px; }
+
+/* `input.` to match the specificity of `input[type="text"]` above, and placed
+   after it so this wins the tie — that rule's `font` shorthand resets family. */
+input.seed-input {
+  flex: 1;
+  min-width: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.06em;
+}
 
 .slider {
   flex: 1;

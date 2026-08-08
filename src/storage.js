@@ -3,6 +3,8 @@
  * the app must keep working without persistence, so every access is guarded.
  */
 
+import { normalizeSeed, randomSeed } from './random.js';
+
 const KEY = 'imagizer.settings.v1';
 
 export const MIN_SIZE = 16;
@@ -27,12 +29,14 @@ export function loadSettings() {
   } catch {
     stored = null;
   }
-  if (!stored || typeof stored !== 'object') return { ...DEFAULTS };
+  // A first-time visitor gets their own seed rather than everyone's shared one.
+  if (!stored || typeof stored !== 'object') return { ...DEFAULTS, seed: randomSeed() };
 
   return {
     cropW: clampSize(stored.cropW, DEFAULTS.cropW),
     cropH: clampSize(stored.cropH, DEFAULTS.cropH),
     format: stored.format === 'image/png' ? 'image/png' : DEFAULTS.format,
+    seed: normalizeSeed(stored.seed) || randomSeed(),
   };
 }
 
