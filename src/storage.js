@@ -7,13 +7,22 @@ import { normalizeSeed, randomSeed } from './random.js';
 
 const KEY = 'imagizer.settings.v1';
 
+/**
+ * Bumped when a default changes in a way that should reach people who already
+ * have settings stored. Only the affected field is dropped — crop size and seed
+ * survive, so a migration never costs someone their setup.
+ *
+ * 2: PNG became the default export format.
+ */
+const VERSION = 2;
+
 export const MIN_SIZE = 16;
 export const MAX_SIZE = 8192;
 
 const DEFAULTS = {
   cropW: 1080,
   cropH: 1080,
-  format: 'image/jpeg',
+  format: 'image/png',
 };
 
 function clampSize(value, fallback) {
@@ -30,13 +39,20 @@ export function loadSettings() {
     stored = null;
   }
   // A first-time visitor gets their own seed rather than everyone's shared one.
-  if (!stored || typeof stored !== 'object') return { ...DEFAULTS, seed: randomSeed() };
+  if (!stored || typeof stored !== 'object') {
+    return { ...DEFAULTS, seed: randomSeed(), version: VERSION };
+  }
+
+  // Settings saved before the default changed adopt the new one; a format
+  // picked since then is the person's own choice and is left alone.
+  const stale = Number(stored.version || 1) < VERSION;
 
   return {
     cropW: clampSize(stored.cropW, DEFAULTS.cropW),
     cropH: clampSize(stored.cropH, DEFAULTS.cropH),
-    format: stored.format === 'image/png' ? 'image/png' : DEFAULTS.format,
+    format: !stale && stored.format === 'image/jpeg' ? 'image/jpeg' : DEFAULTS.format,
     seed: normalizeSeed(stored.seed) || randomSeed(),
+    version: VERSION,
   };
 }
 

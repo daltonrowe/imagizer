@@ -1,4 +1,4 @@
-import { loadImageFile } from './image.js';
+import { loadImageFile, hasTransparency } from './image.js';
 import { createCropper, MIN_ZOOM, MAX_ZOOM } from './cropper.js';
 import { loadSettings, saveSettings, clampSize, MIN_SIZE, MAX_SIZE } from './storage.js';
 import { createRng, randomSeed, normalizeSeed } from './random.js';
@@ -13,6 +13,9 @@ const PRESETS = [
 ];
 
 const JPEG_QUALITY = 0.92;
+
+/** JPEG cannot store alpha; transparency flattens onto this instead of black. */
+const JPEG_MATTE = '#ffffff';
 
 const el = {
   stage: document.getElementById('stage'),
@@ -39,6 +42,7 @@ const el = {
 
 const settings = loadSettings();
 let sourceName = 'photo';
+let sourceHasAlpha = false;
 
 const cropper = createCropper({
   stage: el.stage,
@@ -175,11 +179,14 @@ async function openFile(file) {
     toast('Loading photo…', 0);
     const canvas = await loadImageFile(file);
     sourceName = file.name?.replace(/\.[^.]+$/, '') || 'photo';
+    sourceHasAlpha = hasTransparency(canvas);
     cropper.setSource(canvas);
     el.stage.classList.remove('empty-state');
     el.empty.hidden = true;
     el.exportBtn.disabled = false;
-    toast('');
+    toast(sourceHasAlpha && settings.format === 'image/jpeg'
+      ? 'This photo has transparency — switch to PNG to keep it.'
+      : '');
   } catch (error) {
     toast(error.message || "Couldn't open that photo.");
   }
@@ -207,6 +214,9 @@ window.addEventListener('paste', (event) => {
 el.format.addEventListener('change', () => {
   settings.format = el.format.value;
   saveSettings(settings);
+  if (settings.format === 'image/jpeg' && sourceHasAlpha) {
+    toast('JPEG has no alpha channel — transparency will be filled with white.');
+  }
 });
 
 el.exportBtn.addEventListener('click', async () => {
@@ -214,8 +224,12 @@ el.exportBtn.addEventListener('click', async () => {
   el.exportBtn.disabled = true;
   try {
     const type = settings.format;
-    const blob = await cropper.toBlob(type, type === 'image/jpeg' ? JPEG_QUALITY : undefined);
-    const name = `${sourceName}-${settings.cropW}x${settings.cropH}.${type === 'image/png' ? 'png' : 'jpg'}`;
+    const jpeg = type === 'image/jpeg';
+    const blob = await cropper.toBlob(type, jpeg ? JPEG_QUALITY : undefined, {
+      // PNG keeps the alpha channel; JPEG cannot, so flatten predictably.
+      background: jpeg ? JPEG_MATTE : null,
+    });
+    const name = `${sourceName}-${settings.cropW}x${settings.cropH}.${jpeg ? 'jpg' : 'png'}`;
     await deliver(blob, name, type);
   } catch (error) {
     toast(error.message || 'Export failed.');
@@ -254,6 +268,7 @@ function toast(message, duration = 2600) {
   clearTimeout(toastTimer);
   if (!message) {
     el.toast.hidden = true;
+    el.toast.textContent = '';
     return;
   }
   el.toast.textContent = message;

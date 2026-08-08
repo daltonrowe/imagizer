@@ -20,6 +20,32 @@ export async function loadImageFile(file) {
   return canvas;
 }
 
+/**
+ * Whether a photo carries any transparency, used to warn before a JPEG export
+ * silently flattens it.
+ *
+ * Checked on a small downscaled copy — reading 16M pixels back from a full-size
+ * canvas would allocate ~67MB and stall a phone. Downscaling can only average
+ * alpha values, never invent them, so an opaque photo can't report transparency;
+ * at worst a few isolated transparent pixels go unnoticed, which is a fine
+ * trade for an advisory message.
+ */
+export function hasTransparency(canvas) {
+  const size = 64;
+  const probe = document.createElement('canvas');
+  probe.width = Math.min(size, canvas.width);
+  probe.height = Math.min(size, canvas.height);
+
+  const ctx = probe.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(canvas, 0, 0, probe.width, probe.height);
+
+  const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i] < 255) return true;
+  }
+  return false;
+}
+
 async function decode(file) {
   // Preferred path: the decoder applies EXIF orientation for us.
   if (typeof createImageBitmap === 'function') {

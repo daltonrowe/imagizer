@@ -269,8 +269,15 @@ export function createCropper({ stage, layerHost, frame, onChange }) {
     render();
   }
 
-  /** Render the framed region at the exact requested pixel size. */
-  function toCanvas() {
+  /**
+   * Render the framed region at the exact requested pixel size.
+   *
+   * The canvas keeps its alpha channel, so transparency in the photo survives
+   * into a PNG export. Pass `background` for formats that cannot store alpha —
+   * without it browsers flatten JPEG onto black, which is rarely what anyone
+   * wants. An opaque photo covers the fill completely either way.
+   */
+  function toCanvas({ background = null } = {}) {
     if (!source) throw new Error('No photo loaded.');
     const view = viewSize();
     const start = origin();
@@ -280,14 +287,18 @@ export function createCropper({ stage, layerHost, frame, onChange }) {
     out.height = crop.h;
 
     const ctx = out.getContext('2d');
+    if (background) {
+      ctx.fillStyle = background;
+      ctx.fillRect(0, 0, crop.w, crop.h);
+    }
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(source, start.x, start.y, view.w, view.h, 0, 0, crop.w, crop.h);
     return out;
   }
 
-  function toBlob(type, quality) {
-    const canvas = toCanvas();
+  function toBlob(type, quality, options) {
+    const canvas = toCanvas(options);
     return new Promise((resolve, reject) => {
       canvas.toBlob(
         (blob) => (blob ? resolve(blob) : reject(new Error('Export failed.'))),

@@ -34,8 +34,12 @@ any static host (GitHub Pages, Netlify, …) — the whole app is static files.
 - **Positions the photo in the crop.** Drag to pan, pinch or scroll to zoom,
   double-tap to reset. The photo is clamped so it can never be dragged away from
   an edge of the frame — the crop is always fully covered.
-- **Exports.** JPEG or PNG. On iOS the share sheet opens so the crop can go back
-  to the camera roll; elsewhere it downloads.
+- **Exports.** PNG by default, preserving the alpha channel end to end, so a
+  cutout stays a cutout — transparency shows as a checkerboard in the preview.
+  JPEG is available but cannot store alpha, so transparency is flattened onto
+  white (browsers default to black) and the app says so before you export. On
+  iOS the share sheet opens so the crop can go back to the camera roll;
+  elsewhere it downloads.
 
 A badge in the header shows the source resolution, and turns amber when the crop
 asks for more pixels than the photo can supply at the current zoom.
