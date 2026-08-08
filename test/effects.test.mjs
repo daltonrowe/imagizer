@@ -57,8 +57,8 @@ test('every effect is registered with the metadata the UI needs', () => {
   const ids = EFFECTS.map((e) => e.id);
   assert.deepEqual(ids.slice().sort(), [
     'atkinson', 'bayer', 'blur', 'channelsort', 'channelthreshold', 'colorize',
-    'greyscale', 'huerotate', 'pixelsort', 'randomdither', 'reblend', 'slicer',
-    'spotlight', 'threshold', 'vignette',
+    'greyscale', 'gridgate', 'huerotate', 'pixelsort', 'randomdither', 'reblend',
+    'slicer', 'spotlight', 'threshold', 'vignette',
   ]);
   for (const effect of EFFECTS) {
     assert.equal(typeof effect.label, 'string');
@@ -1277,4 +1277,128 @@ test('slicer shift is a share of the line, not a pixel count', () => {
   };
   // The largest displacement should be the same fraction of either width.
   assert.ok(Math.abs(widest(200) - widest(400)) < 0.02, 'shift should scale with the line');
+});
+
+// ---------- grid gate ----------
+
+const gateParams = (over = {}) => ({
+  shape: 'square', cellWidth: 10, cellHeight: 10, aperture: 50,
+  transparent: true, background: '#ff00ff', ...over,
+});
+
+/** Which pixels survived, as a boolean grid. */
+function passMap(img) {
+  return Array.from({ length: img.height }, (_, y) =>
+    Array.from({ length: img.width }, (_, x) => at(img, x, y)[3] !== 0));
+}
+
+const passRate = (img) => {
+  const map = passMap(img).flat();
+  return map.filter(Boolean).length / map.length;
+};
+
+test('grid gate at full aperture lets a square grid through untouched', () => {
+  const img = image(60, 60, slicable);
+  const copy = [...img.data];
+  getEffect('gridgate').apply(img, { params: gateParams({ aperture: 100 }), rng: rng() });
+  assert.deepEqual([...img.data], copy, 'a wide-open square gate should be a no-op');
+});
+
+test('grid gate blocks the expected share of the image', () => {
+  // A square aperture passes `open` of each axis, so open^2 of the area.
+  for (const aperture of [40, 60, 80]) {
+    const img = image(200, 200, slicable);
+    getEffect('gridgate').apply(img, { params: gateParams({ aperture }), rng: rng() });
+    const expected = (aperture / 100) ** 2;
+    assert.ok(Math.abs(passRate(img) - expected) < 0.06,
+      `square at ${aperture}%: passed ${passRate(img).toFixed(3)}, expected ~${expected.toFixed(3)}`);
+  }
+
+  // A circle inscribed in the cell covers pi/4 of it.
+  const dots = image(200, 200, slicable);
+  getEffect('gridgate').apply(dots, { params: gateParams({ shape: 'circle', aperture: 100 }), rng: rng() });
+  assert.ok(Math.abs(passRate(dots) - Math.PI / 4) < 0.03,
+    `circle at 100%: passed ${passRate(dots).toFixed(3)}, expected ~${(Math.PI / 4).toFixed(3)}`);
+});
+
+test('grid gate repeats exactly every cell', () => {
+  const img = image(120, 120, slicable);
+  getEffect('gridgate').apply(img, { params: gateParams({ cellWidth: 10, cellHeight: 20 }), rng: rng() });
+
+  const map = passMap(img);
+  const cellW = Math.round((120 * 10) / 100);
+  const cellH = Math.round((120 * 20) / 100);
+
+  for (let y = 0; y < 120 - cellH; y++) {
+    for (let x = 0; x < 120 - cellW; x++) {
+      assert.equal(map[y][x], map[y][x + cellW], `column pattern broke at ${x},${y}`);
+      assert.equal(map[y][x], map[y + cellH][x], `row pattern broke at ${x},${y}`);
+    }
+  }
+});
+
+test('grid gate leaves the pixels it passes completely alone', () => {
+  const original = image(80, 80, slicable);
+  const img = image(80, 80, slicable);
+  getEffect('gridgate').apply(img, { params: gateParams(), rng: rng() });
+
+  let passed = 0;
+  for (let y = 0; y < 80; y++) {
+    for (let x = 0; x < 80; x++) {
+      if (at(img, x, y)[3] === 0) continue;
+      assert.deepEqual(at(img, x, y), at(original, x, y), `pixel ${x},${y} was altered`);
+      passed++;
+    }
+  }
+  assert.ok(passed > 0, 'something should have passed');
+});
+
+test('grid gate blocks to transparency or to a colour', () => {
+  const clear = image(60, 60, slicable);
+  getEffect('gridgate').apply(clear, { params: gateParams({ transparent: true }), rng: rng() });
+  assert.ok(passRate(clear) < 1, 'some pixels should be blocked');
+
+  const filled = image(60, 60, slicable);
+  getEffect('gridgate').apply(filled, { params: gateParams({ transparent: false }), rng: rng() });
+
+  let blocked = 0;
+  for (let i = 0; i < filled.data.length; i += 4) {
+    assert.equal(filled.data[i + 3], 255, 'a filled gate should leave nothing transparent');
+    if (filled.data[i] === 255 && filled.data[i + 1] === 0 && filled.data[i + 2] === 255) blocked++;
+  }
+  // The same cells are blocked either way, just filled differently.
+  const clearBlocked = passMap(clear).flat().filter((p) => !p).length;
+  assert.equal(blocked, clearBlocked, 'the pattern should not depend on how gaps are filled');
+});
+
+test('cell size sets the pattern period', () => {
+  const period = (cell) => {
+    const img = image(200, 200, slicable);
+    getEffect('gridgate').apply(img, { params: gateParams({ cellWidth: cell, cellHeight: cell }), rng: rng() });
+    // Count transitions across the whole map, not one row: a single row can
+    // land on a cell boundary and be uniformly blocked, which says nothing
+    // about the period.
+    const map = passMap(img);
+    let changes = 0;
+    for (let y = 0; y < 200; y++) {
+      for (let x = 1; x < 200; x++) if (map[y][x] !== map[y][x - 1]) changes++;
+    }
+    return changes;
+  };
+  assert.ok(period(5) > period(20), 'smaller cells should switch more often');
+});
+
+test('grid gate is fixed: no randomness, so the seed does not matter', () => {
+  const run = (seed) => {
+    const img = image(60, 60, slicable);
+    getEffect('gridgate').apply(img, { params: gateParams(), rng: createRng(seed) });
+    return [...img.data];
+  };
+  assert.deepEqual(run('one'), run('two'));
+});
+
+test('grid gate survives an image smaller than one cell', () => {
+  const img = image(1, 1, () => [10, 20, 30, 255]);
+  getEffect('gridgate').apply(img, { params: gateParams(), rng: rng() });
+  assert.ok(Number.isFinite(at(img, 0, 0)[0]));
 });

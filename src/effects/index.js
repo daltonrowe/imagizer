@@ -23,6 +23,7 @@ import vignette from './vignette.js';
 import spotlight from './spotlight.js';
 import threshold from './threshold.js';
 import channelthreshold from './channelthreshold.js';
+import gridgate from './gridgate.js';
 import atkinson from './atkinson.js';
 import bayer from './bayer.js';
 import randomdither from './randomdither.js';
@@ -40,6 +41,7 @@ export const EFFECTS = [
   spotlight,
   threshold,
   channelthreshold,
+  gridgate,
   atkinson,
   bayer,
   randomdither,

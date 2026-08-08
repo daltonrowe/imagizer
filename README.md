@@ -88,6 +88,7 @@ input of the next. Each has its own settings:
 | **Pixel Sort** | Sorts bright runs into streaks; max run is a share of the line |
 | **Channel Sort** | The same sort confined to one RGB channel, tearing colours apart |
 | **Slicer** | Cuts the image into bands and slides each one along its length |
+| **Grid Gate** | Masks the image behind a regular grid of square or circular apertures |
 | **Vignette** | Darkens in from the edges, heaviest in the corners |
 | **Spotlight** | Darkens everything outside a circle in the middle |
 | **Threshold BW** | One luminance cut, two tones |
@@ -96,6 +97,13 @@ input of the next. Each has its own settings:
 | **Bayer Dither** | Ordered dithering, a woven crosshatch |
 | **Random Dither** | A random threshold per cell — grain, not pattern |
 | **Reblend Original** | Composites the untouched crop back on top |
+
+**Grid Gate** passes pixels through a fixed grid of apertures and blocks the
+rest. Cell size is a percentage of each axis and the aperture a percentage of the
+cell, so the pattern keeps its shape at any crop size. A square aperture at 100%
+is a no-op; a circle at 100% still blocks the cell corners, since it is inscribed
+in the cell — which is why circular apertures pass π/4 of the image. As with the
+slicer, blocked pixels either punch through to transparency or take a colour.
 
 **Slicer** cuts the image into bands — horizontal ones are rows that shift left
 and right, vertical ones are columns that shift up and down — with band size,
