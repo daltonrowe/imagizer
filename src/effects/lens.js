@@ -1,4 +1,4 @@
-import { hexToRgb } from './shared.js';
+import { EDGE_PARAMS, edgeFill, writeFill } from './edges.js';
 import { samplePixel } from './sampling.js';
 
 /**
@@ -21,12 +21,6 @@ import { samplePixel } from './sampling.js';
  * the usual way to crop a barrel's empty corners back out of shot.
  */
 
-const EDGES = [
-  { value: 'transparent', label: 'Transparent' },
-  { value: 'color', label: 'Colour' },
-  { value: 'stretch', label: 'Stretch edge' },
-];
-
 export default {
   id: 'lens',
   label: 'Lens Distortion',
@@ -36,8 +30,7 @@ export default {
   params: [
     { key: 'amount', label: 'Amount', type: 'range', min: -60, max: 60, step: 1, default: 25, unit: '%', random: [-45, 45] },
     { key: 'zoom', label: 'Zoom', type: 'range', min: 50, max: 200, step: 1, default: 100, unit: '%', random: [95, 135] },
-    { key: 'edges', label: 'Edges', type: 'select', default: 'transparent', options: EDGES },
-    { key: 'background', label: 'Edge colour', type: 'color', default: '#000000', showWhen: (p) => p.edges === 'color' },
+    ...EDGE_PARAMS,
   ],
 
   apply(image, { params }) {
@@ -53,9 +46,7 @@ export default {
     const cy = (height - 1) / 2;
     const maxRadius = Math.hypot(cx, cy);
 
-    const stretch = params.edges === 'stretch';
-    const [fillR, fillG, fillB] = hexToRgb(params.background);
-    const fillA = params.edges === 'color' ? 255 : 0;
+    const { stretch, fill } = edgeFill(params);
 
     for (let y = 0; y < height; y++) {
       const dy = y - cy;
@@ -69,10 +60,7 @@ export default {
         const sy = cy + dy * factor;
 
         if (!stretch && (sx < 0 || sx > width - 1 || sy < 0 || sy > height - 1)) {
-          data[i] = fillR;
-          data[i + 1] = fillG;
-          data[i + 2] = fillB;
-          data[i + 3] = fillA;
+          writeFill(data, i, fill);
           continue;
         }
         samplePixel(src, width, height, sx, sy, data, i);

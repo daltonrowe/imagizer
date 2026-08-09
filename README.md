@@ -82,28 +82,52 @@ input of the next. Each has its own settings:
 | Effect | What it does |
 | --- | --- |
 | **Blur** | Box blur, three passes, alpha-safe |
+| **Sharpen** | Unsharp mask, with a threshold so it spares flat areas |
+| **Tilt Shift** | Keeps a band sharp and blurs the rest, at any angle |
 | **Lens Distortion** | Barrel and pincushion — bends straight lines like a real lens |
 | **Chromatic Aberration** | Lens fringing: red and blue part company toward the edges |
+| **Levels** | Brightness, contrast, gamma and saturation |
 | **Hue Rotate** | Rotates every hue by an angle |
 | **Greyscale** | Desaturates by amount |
+| **Invert** | Negative, per channel |
 | **Colorize** | Tints with a chosen colour, keeping luminance |
+| **Duotone** | Maps luminance onto a two-colour ramp |
 | **Bloom** | Blurs the highlights and screens them back as a halo |
 | **Bokeh** | Turns highlights into out-of-focus aperture discs |
+| **Anamorphic Streak** | Draws each highlight out into a flare bar |
+| **Star Filter** | Puts diffraction spikes on every point of light |
+| **Light Leak** | A warm gradient flare in from one edge |
 | **Pixel Sort** | Sorts bright runs into streaks; max run is a share of the line |
 | **Channel Sort** | The same sort confined to one RGB channel, tearing colours apart |
 | **Channel Shift** | Slides one channel across the frame, wrapping or not |
 | **Slicer** | Cuts the image into bands and slides each one along its length |
-| **Grid Gate** | Masks the image behind a regular grid of square or circular apertures |
+| **Block Shuffle** | Displaces a grid of blocks, leaving holes behind |
+| **Twirl** | Spins the middle and leaves the rim |
+| **Ripple** | Sinusoidal waves — rings, rows or columns |
+| **Noise Warp** | Displaces by a smooth noise field |
+| **Kaleidoscope** | Folds the frame into a wedge and mirrors it around |
+| **Colour Key** | Knocks a colour out to transparency, matching on hue |
 | **Vignette** | Darkens in from the edges, heaviest in the corners |
 | **Spotlight** | Darkens everything outside a circle in the middle |
 | **Posterize** | Reduces to a few flat tones, per channel or by luminance |
+| **Palette** | Snaps to a fixed palette, with ordered dithering |
+| **Solarize** | Reverses everything past a threshold |
+| **Pixelate** | Flat blocks, averaged or sampled |
+| **Edge Detect** | Sobel outlines as a greyscale map |
 | **Threshold BW** | One luminance cut, two tones |
 | **Channel Threshold** | A separate cut per RGB channel, up to eight colours |
+| **Grid Gate** | Masks the image behind a regular grid of square or circular apertures |
+| **Shape Mask** | Cuts the frame to a circle, arch, diamond or rounded rectangle |
+| **Halftone** | Print screen: tone carried by dot size, mono or CMYK |
 | **Atkinson Dither** | Error diffusion — the pattern follows the image |
 | **Bayer Dither** | Ordered dithering, a woven crosshatch |
 | **Random Dither** | A random threshold per cell — grain, not pattern |
+| **Film Grain** | Normally distributed grain, strongest in the midtones |
+| **Scanlines** | CRT lines, with an optional RGB phosphor mask |
 | **Reblend Original** | Composites the untouched crop back on top |
 | **Reblend Previous** | The same, reaching back a chosen number of stages instead |
+| **Echo** | Lays several earlier stages back on, each fainter |
+| **Difference Key** | Keeps only what an earlier stage changed |
 
 **Posterize** is the same tone quantisation the dithers do, without the
 dithering, so the bands stay flat. Per channel snaps red, green and blue
@@ -215,6 +239,70 @@ proportions — pixel sort's max run, coverage, bloom's radius, bokeh's disc siz
 and placement — hold at both sizes, but the dithers work per pixel, so expect
 the export to be finer-grained than the preview.
 
+**Levels** is the groundwork the rest of the chain stands on. Everything here
+reacts to tone — a threshold cuts where the luminance is, a pixel sort walks the
+runs that clear it, a bloom picks the highlights — so a flat photo gives flat
+results whatever else is stacked on it. Brightness, contrast and gamma collapse
+into one lookup table; saturation needs each pixel's own luminance, so it
+happens after.
+
+**Sharpen** and **Tilt Shift** are both the blur with the sign or the mask
+changed. Sharpen subtracts a blurred copy to find the detail and adds it back,
+with a threshold so film grain and flat sky are spared. Tilt shift blurs the
+whole frame once and mixes it back in outside a band, which is what a lens
+actually does — one out-of-focus radius, not a gradient of them.
+
+**Duotone** and **Palette** both throw the original colours away, and differ in
+what they put back. Duotone re-reads brightness as a position between two chosen
+ends, so two pixels of equal luminance come out identical however different they
+started. Palette matches against a specific list — Game Boy, CGA, sixteen — so
+the output contains those colours and no others, with ordered dithering to mix
+adjacent entries rather than band between them.
+
+**Solarize** is the darkroom accident: flash the paper mid-develop and everything
+already exposed comes back reversed, with a bright line where the two directions
+meet. Softness is how wide that line runs. **Pixelate** and **Edge Detect** are
+the two blunt reductions — flat blocks, and Sobel gradients as a greyscale map.
+Edge detect stays grey on purpose: Duotone and the reblends already colour things
+better than an ink control here would, so edge detect then duotone is ink on
+paper, and edge detect then reblend is line art over the photo.
+
+**Halftone** carries tone in the size of a dot rather than the density of
+scattered pixels, which is the whole difference from the three dithers and why a
+halftone stays readable where a dither turns to mush. CMYK mode runs four screens
+at 15°, 75°, 0° and 45° — angles chosen to be maximally out of step, because
+plates that line up interfere into blotches instead of reading as colour.
+
+**Film Grain** is normally distributed rather than uniform, which is what
+separates silver halide from television static: most of it is subtle and the
+occasional speck is not. It is also strongest in the midtones, because fully
+exposed or fully unexposed film has no partly-developed crystals left to vary.
+**Scanlines** measures its spacing as a share of the height so the line count
+survives export, and its RGB mask reproduces the fact that a colour CRT has no
+white phosphor — only red, green and blue stripes. Stack Lens Distortion in
+front for the bulge of the glass.
+
+**Anamorphic Streak**, **Star Filter** and **Light Leak** join Bloom and Bokeh on
+the shared rule that light only ever brightens and never touches alpha. The first
+two smear the highlight layer along one or more directions — a gather with the
+taps spread across the length rather than one per pixel, which is what keeps a
+long streak affordable. Star filter's points go in twos because a cross-screen
+filter is ruled lines, and each ruling makes a spike in both directions.
+
+**Twirl**, **Ripple**, **Noise Warp** and **Kaleidoscope** all resample through
+the same bilinear sampler and share the same Edges control, except twirl: a
+rotation preserves radius, so it is the one geometric effect that cannot leave a
+gap. Noise warp's lattice and Block Shuffle's grid are both measured in cells
+across the image rather than in pixels, so the same seed distorts the preview and
+the export identically instead of rearranging itself on download.
+
+**Colour Key** matches on hue and saturation with brightness as a separate, much
+looser tolerance. A green wall is one colour to the eye but hundreds to the
+pixels, all sharing a hue and differing only in how much light fell on them, so a
+plain RGB distance would cut the lit parts and leave the shadowed ones.
+**Shape Mask** measures every shape as a signed distance from its edge, which is
+what lets one softness control feather all of them.
+
 ### Reblend
 
 **Reblend Original** composites the untouched crop back over the processed
@@ -241,6 +329,13 @@ muted card greyed out. Effects declare `historyDepth(params)` to ask for
 intermediate images and receive `frameAt(steps)`; the runner keeps only as far
 back as the deepest reach in the chain, so a twelve-stage chain whose reblend
 looks one step back holds three frames, not twelve.
+
+**Echo** reaches back all the distances at once instead of one: each step is
+composited at a decaying opacity, oldest first so the nearest stage ends on top.
+**Difference Key** compares against an earlier stage and cuts away everything
+that came through unchanged, which leaves precisely the footprint of the effects
+in between — the sorted streaks without the photo they came from. Both declare
+`historyDepth`, so the runner keeps exactly as many frames as they ask for.
 
 Blending follows the W3C compositing spec rather than a plain cross-fade, so the
 modes match `mix-blend-mode` and Photoshop, and alpha composites correctly

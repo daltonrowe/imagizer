@@ -57,11 +57,15 @@ const rng = () => createRng('test-seed');
 test('every effect is registered with the metadata the UI needs', () => {
   const ids = EFFECTS.map((e) => e.id);
   assert.deepEqual(ids.slice().sort(), [
-    'atkinson', 'bayer', 'bloom', 'blur', 'bokeh', 'channelshift',
-    'channelsort', 'channelthreshold', 'chromatic', 'colorize', 'greyscale',
-    'gridgate', 'huerotate', 'lens', 'pixelsort', 'posterize', 'randomdither',
-    'reblend', 'reblendprevious', 'slicer', 'spotlight', 'threshold',
-    'vignette',
+    'atkinson', 'bayer', 'blockshuffle', 'bloom', 'blur', 'bokeh',
+    'channelshift', 'channelsort', 'channelthreshold', 'chromatic',
+    'colorize', 'colorkey', 'diffkey', 'duotone', 'echo', 'edgedetect',
+    'grain', 'greyscale', 'gridgate', 'halftone', 'huerotate', 'invert',
+    'kaleidoscope', 'lens', 'levels', 'lightleak', 'palette', 'pixelate',
+    'pixelsort', 'posterize', 'randomdither', 'reblend', 'reblendprevious',
+    'ripple', 'scanlines', 'shapemask', 'sharpen', 'slicer', 'solarize',
+    'spotlight', 'starfilter', 'streak', 'threshold', 'tiltshift', 'twirl',
+    'vignette', 'warp',
   ]);
   for (const effect of EFFECTS) {
     assert.equal(typeof effect.label, 'string');
@@ -2202,4 +2206,692 @@ test('lens distortion keeps the edge of a cutout clean of dark fringing', () => 
     }
   }
   assert.ok(checked > 50, `expected a rim to check, saw ${checked} pixels`);
+});
+
+// ---------- every effect, generically ----------
+
+/**
+ * Context complete enough for any effect: the ones that reach backwards get
+ * something to reach at, so a crash is a real crash and not a missing input.
+ */
+function context(img, params, seed = 'test-seed') {
+  const past = { data: Uint8ClampedArray.from(img.data), width: img.width, height: img.height };
+  return { params, rng: createRng(seed), source: past, frameAt: () => past };
+}
+
+const SHAPES = [[1, 1], [1, 40], [40, 1], [2, 2], [17, 64], [64, 17], [64, 64], [97, 31]];
+
+test('every effect survives every awkward image shape', () => {
+  // A 1px image, a single row, an odd non-square — the sizes where a centre
+  // lands on a half pixel, a kernel runs off both edges at once, or a division
+  // by a dimension is a division by one.
+  for (const effect of EFFECTS) {
+    for (const [w, h] of SHAPES) {
+      const img = image(w, h, texture);
+      effect.apply(img, context(img, defaults(effect.id)));
+      assert.equal(img.width, w, `${effect.id} changed the width at ${w}x${h}`);
+      assert.equal(img.data.length, w * h * 4, `${effect.id} resized at ${w}x${h}`);
+      for (let i = 0; i < img.data.length; i++) {
+        assert.ok(Number.isFinite(img.data[i]), `${effect.id} wrote a non-finite value at ${w}x${h}`);
+      }
+    }
+  }
+});
+
+test('every effect survives both ends of every slider', () => {
+  // Zero radius, maximum angle, a threshold of nothing: the extremes are where
+  // a divide-by-zero or an empty loop lives.
+  for (const effect of EFFECTS) {
+    for (const spec of effect.params) {
+      if (spec.type !== 'range') continue;
+      for (const value of [spec.min, spec.max]) {
+        const img = image(31, 47, texture);
+        const params = { ...defaults(effect.id), [spec.key]: value };
+        effect.apply(img, context(img, params));
+        for (let i = 0; i < img.data.length; i++) {
+          assert.ok(
+            Number.isFinite(img.data[i]),
+            `${effect.id} with ${spec.key}=${value} wrote a non-finite value`,
+          );
+        }
+      }
+    }
+  }
+});
+
+test('every effect reproduces exactly from the seed', () => {
+  const run = (effect, seed) => {
+    const img = image(48, 32, texture);
+    effect.apply(img, context(img, defaults(effect.id), seed));
+    return [...img.data];
+  };
+  for (const effect of EFFECTS) {
+    assert.deepEqual(run(effect, 'a'), run(effect, 'a'), `${effect.id} is not reproducible`);
+  }
+});
+
+test('every effect leaves fully transparent pixels alone or transparent', () => {
+  // A cutout must not come back as a rectangle: nothing may paint colour into
+  // a transparent pixel and make it opaque without being asked to.
+  const painters = new Set([
+    // Effects whose whole job is to put something where nothing was.
+    'halftone',     // prints onto paper, which is a surface by definition
+    'shapemask',    // fills outside the shape
+    'gridgate',     // fills the blocked gaps when not transparent
+    // Effects that move opaque pixels onto empty ground.
+    'blockshuffle', 'slicer',
+    'lens', 'ripple', 'warp', 'kaleidoscope', 'twirl',
+    // Effects that spread alpha itself, which is what softening a cutout is.
+    'blur', 'tiltshift', 'pixelate',
+  ]);
+  for (const effect of EFFECTS) {
+    if (painters.has(effect.id)) continue;
+    const img = image(40, 40, (x, y) => (x < 20 ? [200, 120, 60, 255] : [0, 0, 0, 0]));
+    effect.apply(img, context(img, defaults(effect.id)));
+    for (let y = 0; y < 40; y += 7) {
+      for (let x = 24; x < 40; x += 5) {
+        assert.equal(at(img, x, y)[3], 0, `${effect.id} filled in a transparent pixel at ${x},${y}`);
+      }
+    }
+  }
+});
+
+// ---------- tonal: levels, invert, sharpen, grain, pixelate ----------
+
+/** Apply an effect at defaults plus overrides, and hand the image back. */
+const run = (id, img, over = {}, seed = 'test-seed') => {
+  getEffect(id).apply(img, context(img, { ...defaults(id), ...over }, seed));
+  return img;
+};
+
+const mid = (size = 32) => image(size, size, () => [128, 128, 128, 255]);
+
+test('levels brightens, darkens, and steepens', () => {
+  assert.ok(bright(run('levels', mid(), { brightness: 40 }), 5, 5) > 128);
+  assert.ok(bright(run('levels', mid(), { brightness: -40 }), 5, 5) < 128);
+  assert.equal(bright(run('levels', mid(), { contrast: 80 }), 5, 5), 128, 'mid grey is the pivot');
+
+  // Contrast pushes everything else away from that pivot.
+  const ramp = image(64, 4, (x) => { const v = x * 4; return [v, v, v, 255]; });
+  run('levels', ramp, { contrast: 60 });
+  assert.ok(bright(ramp, 10, 0) < 40, 'darks got darker');
+  assert.ok(bright(ramp, 54, 0) > 216, 'lights got lighter');
+});
+
+test('levels gamma and saturation move the right way', () => {
+  assert.ok(bright(run('levels', mid(), { gamma: 200 }), 5, 5) > 128, 'high gamma lifts midtones');
+  assert.ok(bright(run('levels', mid(), { gamma: 50 }), 5, 5) < 128, 'low gamma drops them');
+
+  const colour = () => image(8, 8, () => [200, 90, 40, 255]);
+  const flat = run('levels', colour(), { saturation: 0 });
+  const [r, g, b] = at(flat, 0, 0);
+  assert.equal(r, g, 'zero saturation is grey');
+  assert.equal(g, b);
+
+  const vivid = at(run('levels', colour(), { saturation: 180 }), 0, 0);
+  assert.ok(vivid[0] > 200 && vivid[2] < 40, 'over 100% pushes away from grey');
+});
+
+test('levels at neutral settings is an exact no-op', () => {
+  const img = image(24, 24, texture);
+  const copy = [...img.data];
+  run('levels', img);
+  assert.deepEqual([...img.data], copy);
+});
+
+test('invert flips channels, and only the ones asked for', () => {
+  const colour = () => image(8, 8, () => [200, 90, 40, 255]);
+  assert.deepEqual(at(run('invert', colour()), 0, 0), [55, 165, 215, 255]);
+  assert.deepEqual(at(run('invert', colour(), { green: false, blue: false }), 0, 0), [55, 90, 40, 255]);
+  // Half way through an inversion, everything meets at mid grey.
+  const half = at(run('invert', colour(), { amount: 50 }), 0, 0);
+  assert.deepEqual(half.slice(0, 3), [128, 128, 128]);
+});
+
+test('sharpen amplifies an edge and leaves flat areas alone', () => {
+  // Square, because Radius is a share of the *shorter* side: on a 64x8 strip
+  // 5% is a fifth of a pixel and the effect correctly declines to do anything.
+  const edge = () => image(64, 64, (x) => { const v = x < 32 ? 100 : 160; return [v, v, v, 255]; });
+  const sharp = run('sharpen', edge(), { amount: 200, radius: 5, threshold: 0 });
+  assert.ok(bright(sharp, 30, 32) < 100, 'the dark side of the edge undershoots');
+  assert.ok(bright(sharp, 33, 32) > 160, 'the light side overshoots');
+  assert.equal(bright(sharp, 2, 32), 100, 'flat areas away from the edge are untouched');
+});
+
+test('sharpen threshold spares small differences', () => {
+  const gentle = image(64, 64, (x) => { const v = x < 32 ? 126 : 130; return [v, v, v, 255]; });
+  const copy = [...gentle.data];
+  run('sharpen', gentle, { amount: 200, radius: 5, threshold: 30 });
+  assert.deepEqual([...gentle.data], copy, 'a 4-level step is under a threshold of 30');
+});
+
+test('grain is normally distributed, not uniform', () => {
+  // The distinguishing property: most of the noise is small, and the tails are
+  // rare. A uniform offset would fill the range evenly instead.
+  const img = run('grain', mid(200), { amount: 40, size: 0.5, midtones: 0, mono: true });
+  const offsets = [];
+  for (let i = 0; i < img.data.length; i += 4) offsets.push(img.data[i] - 128);
+
+  // Measure the spread from the data, then check its *shape*. A normal
+  // distribution puts 68% inside one deviation and 95% inside two; a uniform
+  // one puts 58% and 100%, so the two are never confusable.
+  const mean = offsets.reduce((sum, v) => sum + v, 0) / offsets.length;
+  const deviation = Math.sqrt(offsets.reduce((sum, v) => sum + (v - mean) ** 2, 0) / offsets.length);
+  const within = (n) => offsets.filter((v) => Math.abs(v - mean) < n * deviation).length / offsets.length;
+
+  assert.ok(deviation > 5, `grain should actually vary, saw a deviation of ${deviation.toFixed(1)}`);
+  assert.ok(Math.abs(within(1) - 0.68) < 0.05, `within one deviation: ${within(1).toFixed(3)}`);
+  assert.ok(Math.abs(within(2) - 0.95) < 0.03, `within two deviations: ${within(2).toFixed(3)}`);
+  assert.ok(offsets.some((v) => v > 0) && offsets.some((v) => v < 0), 'grain goes both ways');
+});
+
+test('grain concentrates in the midtones when asked', () => {
+  const spread = (tone, midtones) => {
+    const img = run('grain', image(120, 120, () => [tone, tone, tone, 255]),
+      { amount: 60, size: 0.5, midtones, mono: true });
+    let sum = 0;
+    for (let i = 0; i < img.data.length; i += 4) sum += Math.abs(img.data[i] - tone);
+    return sum / (img.data.length / 4);
+  };
+  assert.ok(spread(128, 100) > spread(20, 100) * 3, 'biased grain avoids the shadows');
+  // With the bias off, a dark patch grains as hard as a mid one — clipping at 0
+  // is the only thing that holds it back, so compare against a lighter shadow.
+  assert.ok(spread(128, 0) < spread(70, 0) * 1.3, 'unbiased grain is even');
+});
+
+test('pixelate makes flat blocks, and the two samplings differ', () => {
+  const noisy = () => image(64, 64, (x, y) => [(x * 37) % 256, (y * 53) % 256, ((x + y) * 29) % 256, 255]);
+
+  const average = run('pixelate', noisy(), { cell: 25, mode: 'average' });
+  const block = at(average, 0, 0);
+  for (let y = 0; y < 16; y += 5) {
+    for (let x = 0; x < 16; x += 5) assert.deepEqual(at(average, x, y), block, 'the block is flat');
+  }
+  assert.notDeepEqual(at(average, 20, 0), block, 'the next block is not the same');
+
+  const nearest = run('pixelate', noisy(), { cell: 25, mode: 'nearest' });
+  assert.notDeepEqual(at(nearest, 0, 0), block, 'nearest takes a real pixel, not the mean');
+  // Nearest can only ever emit colours the image already contained.
+  const source = noisy();
+  const centre = at(source, 8, 8);
+  assert.deepEqual(at(nearest, 0, 0), centre);
+});
+
+// ---------- print: halftone, duotone, palette, scanlines, solarize ----------
+
+test('halftone dots grow with ink and shrink with light', () => {
+  const coverage = (tone) => {
+    const img = run('halftone', image(96, 96, () => [tone, tone, tone, 255]),
+      { mode: 'mono', dot: 8, angle: 0, ink: '#000000', paper: '#ffffff' });
+    let inked = 0;
+    for (let i = 0; i < img.data.length; i += 4) if (img.data[i] < 128) inked++;
+    return inked / (img.data.length / 4);
+  };
+  const dark = coverage(40);
+  const light = coverage(215);
+  assert.ok(dark > light, `a dark tone should ink more: ${dark.toFixed(3)} vs ${light.toFixed(3)}`);
+  assert.ok(light < 0.25 && dark > 0.4, `coverage should track tone, saw ${light} and ${dark}`);
+  assert.equal(coverage(255), 0, 'white leaves the paper bare');
+});
+
+test('halftone screens the four plates at different angles', () => {
+  // The point of CMYK screening: the plates must not line up. If they shared an
+  // angle the dots would stack and the result would be grey, not colour.
+  const img = run('halftone', image(120, 120, () => [180, 90, 60, 255]),
+    { mode: 'cmyk', dot: 6, paper: '#ffffff' });
+  const seen = new Set();
+  for (let i = 0; i < img.data.length; i += 4) {
+    seen.add(`${img.data[i] >> 5},${img.data[i + 1] >> 5},${img.data[i + 2] >> 5}`);
+  }
+  assert.ok(seen.size > 6, `overlapping plates should make many colours, saw ${seen.size}`);
+});
+
+test('duotone maps equal luminance to equal colour', () => {
+  // The difference from Colorize: the original hue is gone, so two pixels that
+  // were different colours of the same brightness come out identical.
+  // Cyan's luminance is 200.8, which rounds to the same 201 as this grey — a
+  // pair that only matches by eye is no test at all, so the numbers are checked.
+  const matched = image(2, 2, (x, y) => (y === 0 ? [0, 255, 255, 255] : [201, 201, 201, 255]));
+  run('duotone', matched, { shadow: '#000080', highlight: '#ffff00' });
+  assert.deepEqual(at(matched, 0, 0), at(matched, 0, 1), 'same luminance, same output');
+  assert.notDeepEqual(at(matched, 0, 0).slice(0, 3), [0, 255, 255], 'and not the colour it started as');
+});
+
+test('duotone pins both ends of the ramp', () => {
+  const ends = image(2, 1, (x) => (x === 0 ? [0, 0, 0, 255] : [255, 255, 255, 255]));
+  run('duotone', ends, { shadow: '#102040', highlight: '#f0e0d0', midpoint: 70 });
+  assert.deepEqual(at(ends, 0, 0).slice(0, 3), [16, 32, 64], 'black lands on the shadow colour');
+  assert.deepEqual(at(ends, 1, 0).slice(0, 3), [240, 224, 208], 'white lands on the highlight');
+});
+
+test('palette emits only palette colours', () => {
+  const img = run('palette', image(64, 64, texture), { palette: 'gameboy', dither: 60 });
+  const allowed = new Set(['15,56,15', '48,98,48', '139,172,15', '155,188,15']);
+  const seen = new Set();
+  for (let i = 0; i < img.data.length; i += 4) seen.add(`${img.data[i]},${img.data[i + 1]},${img.data[i + 2]}`);
+  for (const colour of seen) assert.ok(allowed.has(colour), `${colour} is not in the palette`);
+  assert.ok(seen.size > 1, 'more than one palette entry should get used');
+});
+
+test('palette dithering mixes entries instead of banding', () => {
+  // A flat tone between two palette entries: undithered it picks one and the
+  // whole patch is uniform, dithered it alternates and the patch is mixed.
+  const patch = () => image(64, 64, () => [90, 90, 90, 255]);
+  const distinct = (img) => {
+    const seen = new Set();
+    for (let i = 0; i < img.data.length; i += 4) seen.add(img.data[i]);
+    return seen.size;
+  };
+  assert.equal(distinct(run('palette', patch(), { palette: 'grey4', dither: 0 })), 1);
+  assert.ok(distinct(run('palette', patch(), { palette: 'grey4', dither: 100 })) > 1);
+});
+
+test('scanlines darken evenly spaced rows', () => {
+  const img = run('scanlines', mid(100), { spacing: 10, darkness: 60, thickness: 50, mask: false });
+  const rows = [];
+  for (let y = 0; y < 100; y++) rows.push(bright(img, 0, y) < 128);
+  const darkCount = rows.filter(Boolean).length;
+  assert.ok(darkCount > 30 && darkCount < 70, `about half the rows should darken, saw ${darkCount}`);
+  // Spacing is 10% of 100px, so the pattern must repeat every 10 rows.
+  for (let y = 0; y + 10 < 100; y++) assert.equal(rows[y], rows[y + 10], `period broke at ${y}`);
+});
+
+test('the RGB mask leaves one channel per column', () => {
+  const img = run('scanlines', mid(60), { spacing: 50, darkness: 0, mask: true, maskStrength: 100 });
+  for (let x = 0; x < 6; x++) {
+    const pixel = at(img, x, 0);
+    const lit = [pixel[0], pixel[1], pixel[2]].filter((v) => v > 0);
+    assert.equal(lit.length, 1, `column ${x} should light one phosphor, not ${lit.length}`);
+  }
+});
+
+test('solarize reverses past the threshold and leaves the rest', () => {
+  const ramp = image(256, 2, (x) => [x, x, x, 255]);
+  run('solarize', ramp, { threshold: 50, softness: 0, amount: 100 });
+  assert.equal(bright(ramp, 20, 0), 20, 'below the cut, untouched');
+  assert.equal(bright(ramp, 220, 0), 35, 'above it, the negative');
+});
+
+test('solarize can reverse the shadows instead', () => {
+  const ramp = image(256, 2, (x) => [x, x, x, 255]);
+  run('solarize', ramp, { threshold: 50, softness: 0, below: true });
+  assert.equal(bright(ramp, 20, 0), 235, 'the shadows flipped');
+  assert.equal(bright(ramp, 220, 0), 220, 'the highlights did not');
+});
+
+// ---------- geometry: twirl, ripple, warp, kaleidoscope, block shuffle ----------
+
+/** A cross of bright lines through the centre, easy to follow when bent. */
+const cross = (size) => image(size, size, (x, y) => {
+  const c = (size - 1) / 2;
+  return (Math.abs(x - c) < 2 || Math.abs(y - c) < 2) ? [255, 255, 255, 255] : [20, 20, 20, 255];
+});
+
+test('twirl spins the middle and leaves the rim', () => {
+  const img = run('twirl', cross(81), { angle: 180, radius: 50, falloff: 2 });
+  // The arm pointing right from the centre has been carried round; the same
+  // spot well outside the radius has not.
+  const source = cross(81);
+  assert.ok(bright(img, 60, 40) < 200, 'the arm moved off the centre row');
+  // Radius 50% of the half-diagonal reaches 28px, so this pixel is outside it.
+  // It sits on the cross's own arm, so the untouched value is 255, not the
+  // background — hence comparing against the source rather than a constant.
+  assert.equal(bright(img, 79, 40), bright(source, 79, 40), 'past the radius nothing changed');
+  assert.equal(bright(img, 40, 40), 255, 'the exact centre stays put');
+});
+
+test('twirl never leaves a gap, whatever the angle', () => {
+  // A rotation preserves radius, so there is nowhere it could read from
+  // outside the frame — this is the one geometric effect with no edge control.
+  for (const angle of [-720, -90, 90, 720]) {
+    const img = run('twirl', image(64, 64, () => [10, 20, 30, 255]), { angle, radius: 150 });
+    for (let i = 3; i < img.data.length; i += 4) {
+      assert.equal(img.data[i], 255, `angle ${angle} punched a hole`);
+    }
+  }
+});
+
+test('ripple bends rows one way and columns the other', () => {
+  const straight = image(64, 64, (x, y) => (y === 32 ? [255, 255, 255, 255] : [20, 20, 20, 255]));
+  const rows = run('ripple', straight, { mode: 'rows', wavelength: 30, amplitude: 10, edges: 'stretch' });
+  // A horizontal line displaced sideways stays a horizontal line...
+  assert.equal(bright(rows, 10, 32), 255, 'rows slide along the line, so it survives');
+
+  const column = image(64, 64, (x) => (x === 32 ? [255, 255, 255, 255] : [20, 20, 20, 255]));
+  const bent = run('ripple', column, { mode: 'rows', wavelength: 30, amplitude: 10, edges: 'stretch' });
+  const litAt = (y) => { for (let x = 0; x < 64; x++) if (bright(bent, x, y) > 140) return x; return null; };
+  assert.notEqual(litAt(10), litAt(26), 'a vertical line should waver down its length');
+});
+
+test('ripple rings stay circular', () => {
+  const img = run('ripple', cross(81), { mode: 'rings', wavelength: 20, amplitude: 6, phase: 0, edges: 'stretch' });
+  // Odd size, so the same distance either side of the centre really is equal.
+  for (const offset of [10, 20, 30]) {
+    assert.equal(bright(img, 40 + offset, 40), bright(img, 40 - offset, 40), `asymmetric at ${offset}`);
+    assert.equal(bright(img, 40, 40 + offset), bright(img, 40 + offset, 40), `not radial at ${offset}`);
+  }
+});
+
+test('ripple at zero amplitude changes nothing', () => {
+  const img = image(32, 32, texture);
+  const copy = [...img.data];
+  run('ripple', img, { amplitude: 0 });
+  assert.deepEqual([...img.data], copy);
+});
+
+test('warp displaces smoothly, not per pixel', () => {
+  // The test that separates a noise *field* from noise: neighbours must move
+  // together. Sampling a smooth gradient, the output stays smooth.
+  const gradient = image(96, 96, (x) => { const v = Math.round((x / 95) * 255); return [v, v, v, 255]; });
+  run('warp', gradient, { scale: 25, amount: 10, detail: 1, edges: 'stretch' });
+
+  let jumps = 0;
+  for (let y = 0; y < 96; y++) {
+    for (let x = 1; x < 96; x++) {
+      if (Math.abs(bright(gradient, x, y) - bright(gradient, x - 1, y)) > 24) jumps++;
+    }
+  }
+  assert.ok(jumps < 40, `a smooth warp should not tear the gradient, saw ${jumps} jumps`);
+});
+
+test('warp moves the image at all, and differently per seed', () => {
+  const shot = (seed) => {
+    const img = run('warp', cross(64), { scale: 20, amount: 12, edges: 'stretch' }, seed);
+    return [...img.data];
+  };
+  assert.notDeepEqual(shot('one'), [...cross(64).data], 'something should move');
+  assert.notDeepEqual(shot('one'), shot('two'), 'a different seed warps differently');
+  assert.deepEqual(shot('one'), shot('one'), 'the same seed does not');
+});
+
+test('kaleidoscope repeats one wedge around the circle', () => {
+  // A smooth gradient, because the probe rounds to whole pixels: against the
+  // fast-varying `texture` a half-pixel of probe error reads as a 15-level
+  // difference and the test measures its own rounding. It must not be
+  // radially symmetric either, or every probe would match for free.
+  const gradient = (x, y) => {
+    const v = Math.round((x / 80) * 200 + (y / 80) * 40);
+    return [v, v, v, 255];
+  };
+  const img = run('kaleidoscope', image(81, 81, gradient), { segments: 6, rotation: 0, mirror: true, edges: 'stretch' });
+  // Six segments means everything repeats every 60 degrees about the centre.
+  const sample = (degrees, radius) => {
+    const radians = (degrees * Math.PI) / 180;
+    return bright(img, Math.round(40 + Math.cos(radians) * radius), Math.round(40 + Math.sin(radians) * radius));
+  };
+  // Near-equal, not equal: the probe rounds to whole pixels, so two points
+  // that are the same distance into their wedges still land a fraction apart
+  // and the sampler interpolates each slightly differently.
+  const close = (a, b, why) => assert.ok(Math.abs(a - b) <= 4, `${why}: ${a} vs ${b}`);
+  const seen = new Set();
+  for (const radius of [12, 24, 36]) {
+    for (const base of [7, 23]) {
+      seen.add(sample(base, radius));
+      close(sample(base, radius), sample(base + 60, radius), `wedge broke at ${base}deg r${radius}`);
+      close(sample(base, radius), sample(base + 120, radius), `wedge broke at ${base}deg r${radius}`);
+    }
+  }
+  assert.ok(seen.size > 2, 'the probes must land on different tones, or this proves nothing');
+});
+
+test('kaleidoscope mirrors its segments unless told not to', () => {
+  const shot = (mirror) => {
+    const img = run('kaleidoscope', image(81, 81, texture), { segments: 4, mirror, edges: 'stretch' });
+    return [...img.data];
+  };
+  assert.notDeepEqual(shot(true), shot(false), 'a pinwheel is not a kaleidoscope');
+});
+
+test('block shuffle moves whole blocks and leaves the rest', () => {
+  const img = run('blockshuffle', image(80, 80, texture), { block: 10, shift: 20, density: 100, transparent: true });
+  let empty = 0;
+  for (let i = 3; i < img.data.length; i += 4) if (img.data[i] === 0) empty++;
+  assert.ok(empty > 0, 'blocks that moved leave their old spot behind');
+
+  const still = run('blockshuffle', image(80, 80, texture), { block: 10, shift: 20, density: 0 });
+  const source = image(80, 80, texture);
+  assert.deepEqual([...still.data], [...source.data], 'at zero density nothing moves');
+});
+
+test('block shuffle fills its gaps with a colour when asked', () => {
+  const img = run('blockshuffle', image(80, 80, texture), { block: 10, shift: 25, density: 100, transparent: false, background: '#ff00ff' });
+  for (let i = 3; i < img.data.length; i += 4) assert.equal(img.data[i], 255, 'nothing should be transparent');
+  let magenta = 0;
+  for (let i = 0; i < img.data.length; i += 4) {
+    if (img.data[i] === 255 && img.data[i + 1] === 0 && img.data[i + 2] === 255) magenta++;
+  }
+  assert.ok(magenta > 0, 'the gaps should take the colour');
+});
+
+// ---------- light: streak, star filter, light leak, tilt shift ----------
+
+/** One bright dot on a dark field. */
+const dot = (size, radius = 3) => image(size, size, (x, y) =>
+  (Math.hypot(x - (size - 1) / 2, y - (size - 1) / 2) <= radius ? [255, 255, 255, 255] : [10, 10, 10, 255]));
+
+test('the anamorphic streak draws light out along one axis', () => {
+  const img = run('streak', dot(97), { threshold: 40, length: 30, angle: 0, intensity: 200, tint: '#ffffff' });
+  assert.ok(bright(img, 70, 48) > 20, 'light reaches sideways');
+  assert.equal(bright(img, 48, 70), 10, 'and not up or down');
+});
+
+test('the streak angle turns the bar', () => {
+  const img = run('streak', dot(97), { threshold: 40, length: 30, angle: 90, intensity: 200, tint: '#ffffff' });
+  assert.ok(bright(img, 48, 70) > 20, 'at 90 degrees it runs vertically');
+  assert.equal(bright(img, 70, 48), 10, 'and no longer sideways');
+});
+
+test('the star filter puts spikes on every side', () => {
+  const img = run('starfilter', dot(97), { threshold: 40, points: 4, length: 25, rotation: 0, intensity: 250 });
+  // Four points at rotation 0 means two crossed bars: across and down.
+  for (const [x, y] of [[75, 48], [21, 48], [48, 75], [48, 21]]) {
+    assert.ok(bright(img, x, y) > 15, `no spike reached ${x},${y}`);
+  }
+  assert.equal(bright(img, 72, 72), 10, 'but not diagonally, at this rotation');
+});
+
+test('more points make more spikes', () => {
+  const spikes = (points) => {
+    const img = run('starfilter', dot(97), { threshold: 40, points, length: 25, rotation: 0, intensity: 250 });
+    // Walk a circle around the dot and count the lit arcs.
+    const arc = [];
+    for (let degrees = 0; degrees < 360; degrees++) {
+      const radians = (degrees * Math.PI) / 180;
+      arc.push(bright(img, Math.round(48 + Math.cos(radians) * 22), Math.round(48 + Math.sin(radians) * 22)) > 14);
+    }
+    // Circular, so the scan has to wrap: a spike sitting across 0 degrees is
+    // one spike, and a linear scan would count its two halves separately.
+    let count = 0;
+    for (let i = 0; i < arc.length; i++) if (arc[i] && !arc[(i + arc.length - 1) % arc.length]) count++;
+    return count;
+  };
+  assert.equal(spikes(2), 2);
+  assert.equal(spikes(4), 4);
+});
+
+test('the light leak brightens from one side', () => {
+  const img = run('lightleak', mid(64), { origin: 'left', size: 60, intensity: 120, color: '#ff8040' });
+  assert.ok(bright(img, 2, 32) > bright(img, 61, 32), 'brightest at the edge it came from');
+  const right = run('lightleak', mid(64), { origin: 'right', size: 60, intensity: 120, color: '#ff8040' });
+  assert.ok(bright(right, 61, 32) > bright(right, 2, 32), 'and the other way round');
+});
+
+test('the light leak only ever brightens', () => {
+  const before = mid(48);
+  const copy = [...before.data];
+  run('lightleak', before, { intensity: 200, size: 150 });
+  for (let i = 0; i < before.data.length; i += 4) {
+    for (let c = 0; c < 3; c++) assert.ok(before.data[i + c] >= copy[i + c], 'a leak cannot darken');
+  }
+});
+
+test('tilt shift keeps a band sharp and blurs the rest', () => {
+  const stripes = () => image(96, 96, (x, y) => { const v = y % 4 < 2 ? 240 : 20; return [v, v, v, 255]; });
+  const img = run('tiltshift', stripes(), { position: 50, width: 20, angle: 0, softness: 10, blur: 8 });
+  const contrast = (y) => Math.abs(bright(img, 48, y) - bright(img, 48, y + 2));
+  assert.ok(contrast(46) > 150, 'the band keeps its stripes');
+  assert.ok(contrast(4) < 60, 'the top is smeared');
+  assert.ok(contrast(90) < 60, 'and so is the bottom');
+});
+
+test('the tilt shift angle turns the band', () => {
+  const stripes = () => image(96, 96, (x) => { const v = x % 4 < 2 ? 240 : 20; return [v, v, v, 255]; });
+  const img = run('tiltshift', stripes(), { position: 50, width: 20, angle: 90, softness: 10, blur: 8 });
+  const contrast = (x) => Math.abs(bright(img, x, 48) - bright(img, x + 2, 48));
+  assert.ok(contrast(46) > 150, 'a vertical band keeps its stripes');
+  assert.ok(contrast(6) < 60, 'and the sides are smeared');
+});
+
+// ---------- history: echo, difference key ----------
+
+test('echo lays several earlier stages back on', () => {
+  const chain = [
+    createItem('greyscale', { amount: 100 }),
+    createItem('threshold', { level: 0, softness: 0, invert: false }),
+    createItem('echo', { steps: 2, opacity: 100, decay: 100, mode: 'normal' }),
+  ];
+  // Oldest first, so step 1 — the greyscale — ends up on top.
+  const out = render(chain);
+  const greyOnly = render([createItem('greyscale', { amount: 100 })]);
+  assert.deepEqual([...out.data], [...greyOnly.data]);
+});
+
+test('echo decays, so nearer stages show strongest', () => {
+  const chain = (decay) => [
+    createItem('greyscale', { amount: 100 }),
+    createItem('threshold', { level: 0, softness: 0, invert: false }),
+    createItem('echo', { steps: 3, opacity: 60, decay, mode: 'normal' }),
+  ];
+  const strong = render(chain(90));
+  const weak = render(chain(10));
+  assert.notDeepEqual([...strong.data], [...weak.data], 'decay should change the mix');
+
+  // A fast decay leaves almost nothing for the older echoes, so the result
+  // sits close to a single reblend of the nearest stage; a slow one does not.
+  // Not identical, though: even at 10% the second echo still lands at 6%.
+  const single = render([
+    createItem('greyscale', { amount: 100 }),
+    createItem('threshold', { level: 0, softness: 0, invert: false }),
+    createItem('reblendprevious', { steps: 1, opacity: 60, mode: 'normal' }),
+  ]);
+  const gap = (img) => {
+    let sum = 0;
+    for (let i = 0; i < img.data.length; i++) sum += Math.abs(img.data[i] - single.data[i]);
+    return sum;
+  };
+  assert.ok(gap(weak) < gap(strong) / 4, `fast decay ${gap(weak)} should sit far nearer than slow ${gap(strong)}`);
+});
+
+test('the difference key keeps what changed and cuts what did not', () => {
+  // Half the image gets thresholded to white, half is already white and so
+  // comes through untouched. Only the half that moved should survive.
+  const fill = (x) => (x < 20 ? [40, 40, 40, 255] : [255, 255, 255, 255]);
+  const out = render([
+    createItem('threshold', { level: 0, softness: 0, invert: false }),
+    createItem('diffkey', { steps: 1, tolerance: 10, softness: 0, invert: false }),
+  ], fill, 40);
+
+  assert.equal(at(out, 5, 5)[3], 255, 'the darks were changed, so they stay');
+  assert.equal(at(out, 35, 5)[3], 0, 'the whites were already white, so they go');
+});
+
+test('the difference key can keep the unchanged half instead', () => {
+  const fill = (x) => (x < 20 ? [40, 40, 40, 255] : [255, 255, 255, 255]);
+  const out = render([
+    createItem('threshold', { level: 0, softness: 0, invert: false }),
+    createItem('diffkey', { steps: 1, tolerance: 10, softness: 0, invert: true }),
+  ], fill, 40);
+
+  assert.equal(at(out, 5, 5)[3], 0);
+  assert.equal(at(out, 35, 5)[3], 255);
+});
+
+// ---------- alpha: colour key, shape mask, edge detect ----------
+
+test('the colour key cuts its colour and keeps the rest', () => {
+  const img = image(40, 8, (x) => (x < 20 ? [0, 177, 64, 255] : [200, 60, 60, 255]));
+  run('colorkey', img, { color: '#00b140', tolerance: 25, brightness: 60, softness: 0 });
+  assert.equal(at(img, 5, 4)[3], 0, 'the key colour is gone');
+  assert.equal(at(img, 35, 4)[3], 255, 'the rest is untouched');
+});
+
+test('the colour key matches on hue, not on brightness', () => {
+  // The same green at three exposures, which means scalar multiples of one
+  // colour — adding to the other channels instead would change the hue too,
+  // and the effect would be right to keep it.
+  const img = image(3, 1, (x) => [[0, 88, 32], [0, 177, 64], [0, 239, 86]][x].concat(255));
+  run('colorkey', img, { color: '#00b140', tolerance: 30, brightness: 100, softness: 0 });
+  for (let x = 0; x < 3; x++) assert.equal(at(img, x, 0)[3], 0, `shade ${x} survived`);
+});
+
+test('the shape mask cuts to its shape', () => {
+  const img = run('shapemask', image(81, 81, () => [200, 200, 200, 255]),
+    { shape: 'circle', inset: 0, softness: 0, transparent: true });
+  assert.equal(at(img, 40, 40)[3], 255, 'the middle is kept');
+  assert.equal(at(img, 0, 0)[3], 0, 'the corners are cut');
+  assert.equal(at(img, 40, 2)[3], 255, 'the edge midpoints are inside the circle');
+});
+
+test('every shape mask cuts something and keeps the centre', () => {
+  for (const shape of ['circle', 'rounded', 'diamond', 'arch']) {
+    const img = run('shapemask', image(81, 81, () => [200, 200, 200, 255]),
+      { shape, inset: 5, corner: 30, softness: 0, transparent: true });
+    assert.equal(at(img, 40, 40)[3], 255, `${shape} lost its middle`);
+    assert.equal(at(img, 0, 0)[3], 0, `${shape} kept a corner`);
+  }
+});
+
+test('the shape mask fills instead of cutting when asked', () => {
+  const img = run('shapemask', image(81, 81, () => [200, 200, 200, 255]),
+    { shape: 'circle', softness: 0, transparent: false, background: '#ff00ff' });
+  assert.deepEqual(at(img, 0, 0), [255, 0, 255, 255], 'outside takes the colour');
+  assert.deepEqual(at(img, 40, 40), [200, 200, 200, 255], 'inside is left alone');
+});
+
+test('edge detect finds edges and ignores flat areas', () => {
+  const img = run('edgedetect', image(64, 64, (x) => { const v = x < 32 ? 30 : 220; return [v, v, v, 255]; }),
+    { amount: 150, threshold: 0, invert: false });
+  assert.ok(bright(img, 31, 32) > 120, 'the edge lights up');
+  assert.equal(bright(img, 8, 32), 0, 'the flat left is black');
+  assert.equal(bright(img, 56, 32), 0, 'and so is the flat right');
+});
+
+test('edge detect does not find the frame border', () => {
+  // The kernels clamp at the border rather than reading past it, or every
+  // image would come back with a bright rectangle drawn round it.
+  const flat = run('edgedetect', image(48, 48, () => [180, 180, 180, 255]), { threshold: 0 });
+  for (let i = 0; i < flat.data.length; i += 4) assert.equal(flat.data[i], 0, 'a flat image has no edges');
+
+  // Reading past the edge instead would put NaN in the border rows, and a NaN
+  // stored into a clamped array becomes 0 — indistinguishable from "no edge
+  // here" on a flat image. So check a real edge still registers on row zero.
+  const edge = run('edgedetect', image(48, 48, (x) => { const v = x < 24 ? 30 : 220; return [v, v, v, 255]; }),
+    { amount: 150, threshold: 0 });
+  assert.ok(bright(edge, 23, 0) > 120, 'the edge should reach the top row');
+  assert.equal(bright(edge, 23, 0), bright(edge, 23, 24), 'and read the same as the middle');
+});
+
+test('edge detect can invert to dark lines on white', () => {
+  const img = run('edgedetect', image(64, 64, (x) => { const v = x < 32 ? 30 : 220; return [v, v, v, 255]; }),
+    { amount: 150, threshold: 0, invert: true });
+  assert.ok(bright(img, 31, 32) < 140, 'the edge is dark');
+  assert.equal(bright(img, 8, 32), 255, 'the paper is white');
+});
+
+test('the difference key notices a change in alpha alone', () => {
+  // A pixel that only became transparent has changed as surely as one that
+  // changed colour, so the comparison has to include alpha.
+  const img = image(40, 4, () => [120, 120, 120, 255]);
+  const past = { data: Uint8ClampedArray.from(img.data), width: 40, height: 4 };
+  for (let x = 0; x < 20; x++) {
+    for (let y = 0; y < 4; y++) past.data[(y * 40 + x) * 4 + 3] = 40;
+  }
+
+  getEffect('diffkey').apply(img, {
+    params: { ...defaults('diffkey'), steps: 1, tolerance: 10, softness: 0, invert: false },
+    rng: rng(),
+    frameAt: () => past,
+  });
+  assert.equal(at(img, 5, 2)[3], 255, 'alpha changed here, so it stays');
+  assert.equal(at(img, 35, 2)[3], 0, 'nothing changed here, so it goes');
 });

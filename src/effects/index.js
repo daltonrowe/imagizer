@@ -15,53 +15,101 @@
 
 import { clamp, hslToRgb, rgbToHex } from './shared.js';
 import blur from './blur.js';
-import chromatic from './chromatic.js';
+import sharpen from './sharpen.js';
+import tiltshift from './tiltshift.js';
 import lens from './lens.js';
+import chromatic from './chromatic.js';
+import levels from './levels.js';
 import huerotate from './huerotate.js';
 import greyscale from './greyscale.js';
+import invert from './invert.js';
 import colorize from './colorize.js';
+import duotone from './duotone.js';
 import bloom from './bloom.js';
 import bokeh from './bokeh.js';
+import streak from './streak.js';
+import starfilter from './starfilter.js';
+import lightleak from './lightleak.js';
 import pixelsort from './pixelsort.js';
 import channelsort from './channelsort.js';
 import channelshift from './channelshift.js';
 import slicer from './slicer.js';
+import blockshuffle from './blockshuffle.js';
+import twirl from './twirl.js';
+import ripple from './ripple.js';
+import warp from './warp.js';
+import kaleidoscope from './kaleidoscope.js';
+import colorkey from './colorkey.js';
 import vignette from './vignette.js';
 import spotlight from './spotlight.js';
 import posterize from './posterize.js';
+import palette from './palette.js';
+import solarize from './solarize.js';
+import pixelate from './pixelate.js';
+import edgedetect from './edgedetect.js';
 import threshold from './threshold.js';
 import channelthreshold from './channelthreshold.js';
 import gridgate from './gridgate.js';
+import shapemask from './shapemask.js';
+import halftone from './halftone.js';
 import atkinson from './atkinson.js';
 import bayer from './bayer.js';
 import randomdither from './randomdither.js';
+import grain from './grain.js';
+import scanlines from './scanlines.js';
 import reblend from './reblend.js';
 import reblendprevious from './reblendprevious.js';
+import echo from './echo.js';
+import diffkey from './diffkey.js';
 
 export const EFFECTS = [
   blur,
+  sharpen,
+  tiltshift,
   lens,
   chromatic,
+  levels,
   huerotate,
   greyscale,
+  invert,
   colorize,
+  duotone,
   bloom,
   bokeh,
+  streak,
+  starfilter,
+  lightleak,
   pixelsort,
   channelsort,
   channelshift,
   slicer,
+  blockshuffle,
+  twirl,
+  ripple,
+  warp,
+  kaleidoscope,
+  colorkey,
   vignette,
   spotlight,
   posterize,
+  palette,
+  solarize,
+  pixelate,
+  edgedetect,
   threshold,
   channelthreshold,
   gridgate,
+  shapemask,
+  halftone,
   atkinson,
   bayer,
   randomdither,
+  grain,
+  scanlines,
   reblend,
   reblendprevious,
+  echo,
+  diffkey,
 ];
 
 const BY_ID = new Map(EFFECTS.map((effect) => [effect.id, effect]));
