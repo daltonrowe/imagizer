@@ -16,6 +16,7 @@
 import { clamp, hslToRgb, rgbToHex } from './shared.js';
 import blur from './blur.js';
 import chromatic from './chromatic.js';
+import lens from './lens.js';
 import huerotate from './huerotate.js';
 import greyscale from './greyscale.js';
 import colorize from './colorize.js';
@@ -39,6 +40,7 @@ import reblendprevious from './reblendprevious.js';
 
 export const EFFECTS = [
   blur,
+  lens,
   chromatic,
   huerotate,
   greyscale,

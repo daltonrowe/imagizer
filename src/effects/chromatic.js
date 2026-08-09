@@ -1,4 +1,4 @@
-import { clamp } from './shared.js';
+import { sampleChannel } from './sampling.js';
 
 /**
  * Chromatic aberration: the lens artefact where a cheap element focuses red and
@@ -70,57 +70,10 @@ export default {
           if (shift[c] === 0) continue;
           // A channel displaced outward is one sampled from further in.
           const d = distance * shift[c];
-          data[i + c] = sample(src, width, height, x - ux * d, y - uy * d, c);
+          data[i + c] = sampleChannel(src, width, height, x - ux * d, y - uy * d, c);
         }
       }
     }
     return image;
   },
 };
-
-/**
- * Bilinear sample of one colour channel, premultiplied so a transparent
- * neighbour contributes nothing rather than dragging its colour (usually black)
- * into the fringe. Coordinates outside the image clamp to the edge.
- *
- * Alpha is deliberately not resampled: the cutout keeps its shape and the
- * fringes are clipped by it, which is what a lens does to a subject rather than
- * to the frame.
- */
-function sample(src, width, height, x, y, channel) {
-  const fx = clamp(x, 0, width - 1);
-  const fy = clamp(y, 0, height - 1);
-  const x0 = Math.floor(fx);
-  const y0 = Math.floor(fy);
-  const x1 = Math.min(x0 + 1, width - 1);
-  const y1 = Math.min(y0 + 1, height - 1);
-  const tx = fx - x0;
-  const ty = fy - y0;
-
-  const row0 = y0 * width;
-  const row1 = y1 * width;
-  const o00 = (row0 + x0) * 4;
-  const o10 = (row0 + x1) * 4;
-  const o01 = (row1 + x0) * 4;
-  const o11 = (row1 + x1) * 4;
-
-  const w00 = (1 - tx) * (1 - ty);
-  const w10 = tx * (1 - ty);
-  const w01 = (1 - tx) * ty;
-  const w11 = tx * ty;
-
-  const a00 = (src[o00 + 3] / 255) * w00;
-  const a10 = (src[o10 + 3] / 255) * w10;
-  const a01 = (src[o01 + 3] / 255) * w01;
-  const a11 = (src[o11 + 3] / 255) * w11;
-
-  const alpha = a00 + a10 + a01 + a11;
-  if (alpha <= 0) return 0;
-
-  return (
-    src[o00 + channel] * a00
-    + src[o10 + channel] * a10
-    + src[o01 + channel] * a01
-    + src[o11 + channel] * a11
-  ) / alpha;
-}

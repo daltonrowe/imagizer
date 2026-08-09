@@ -59,7 +59,7 @@ test('every effect is registered with the metadata the UI needs', () => {
   assert.deepEqual(ids.slice().sort(), [
     'atkinson', 'bayer', 'bloom', 'blur', 'bokeh', 'channelshift',
     'channelsort', 'channelthreshold', 'chromatic', 'colorize', 'greyscale',
-    'gridgate', 'huerotate', 'pixelsort', 'posterize', 'randomdither',
+    'gridgate', 'huerotate', 'lens', 'pixelsort', 'posterize', 'randomdither',
     'reblend', 'reblendprevious', 'slicer', 'spotlight', 'threshold',
     'vignette',
   ]);
@@ -856,14 +856,20 @@ test('colour params are validated and randomised as usable colours', () => {
   assert.equal(normalizeParams(colorize, { color: '#fff' }).color, colorize.params[0].default);
   assert.equal(normalizeParams(colorize, {}).color, colorize.params[0].default);
 
+  // Draw until enough chains happen to contain a colorize, rather than fixing
+  // the number of rolls: a random chain is 2-5 effects out of the whole
+  // registry, so a fixed roll count quietly weakens every time one is added.
   const seen = new Set();
-  for (let i = 0; i < 50; i++) {
+  let sampled = 0;
+  for (let i = 0; sampled < 20 && i < 500; i++) {
     const item = randomChain(createRng(`c${i}`)).find((entry) => entry.id === 'colorize');
     if (!item) continue;
     assert.match(item.params.color, /^#[0-9a-f]{6}$/);
     seen.add(item.params.color);
+    sampled++;
   }
-  assert.ok(seen.size > 5, `random colours should vary, saw ${seen.size}`);
+  assert.equal(sampled, 20, 'colorize should turn up within 500 rolls');
+  assert.ok(seen.size > 10, `random colours should vary, saw ${seen.size} across ${sampled}`);
 });
 
 test('a colour param round-trips through JSON', () => {
@@ -2043,4 +2049,157 @@ test('bokeh is reproducible from the seed and moves with it', () => {
   };
   assert.deepEqual(run('one'), run('one'), 'same seed, same discs');
   assert.notDeepEqual(run('one'), run('two'), 'a different seed should move them');
+});
+
+// ---------- lens distortion ----------
+
+const lensParams = (over = {}) => ({ ...defaults('lens'), ...over });
+
+const distort = (img, over = {}) => {
+  getEffect('lens').apply(img, { params: lensParams(over), rng: rng() });
+  return img;
+};
+
+/**
+ * A bright ring at a known radius from the centre, on odd dimensions so the
+ * centre is a real pixel. Where the ring lands afterwards is the whole map.
+ */
+const ring = (size, radius) => image(size, size, (x, y) => {
+  const c = (size - 1) / 2;
+  const d = Math.hypot(x - c, y - c);
+  return Math.abs(d - radius) < 1 ? [255, 255, 255, 255] : [30, 30, 30, 255];
+});
+
+/** Distance from the centre to the ring along the centre row, going right. */
+function ringRadius(img) {
+  const c = (img.width - 1) / 2;
+  for (let x = Math.floor(c) + 1; x < img.width; x++) {
+    if (bright(img, x, (img.height - 1) / 2) > 140) return x - c;
+  }
+  return null;
+}
+
+test('lens distortion at zero amount and full zoom changes nothing', () => {
+  const img = ring(81, 25);
+  const copy = [...img.data];
+  distort(img, { amount: 0, zoom: 100 });
+  assert.deepEqual([...img.data], copy, 'an identity map should not even resample');
+});
+
+test('barrel pulls the frame in, pincushion pushes it out', () => {
+  const straight = ringRadius(ring(81, 25));
+  assert.equal(straight, 25);
+
+  const barrel = ringRadius(distort(ring(81, 25), { amount: 40, edges: 'stretch' }));
+  const pincushion = ringRadius(distort(ring(81, 25), { amount: -40, edges: 'stretch' }));
+
+  assert.ok(barrel < straight, `barrel should draw the ring inward: ${barrel} vs ${straight}`);
+  assert.ok(pincushion > straight, `pincushion should push it outward: ${pincushion} vs ${straight}`);
+});
+
+test('barrel bows a straight line outward, pincushion inward', () => {
+  // The visual definition of the two, and the thing a sign error would flip.
+  // A horizontal line above the centre: under barrel its ends bend toward the
+  // centre row while its middle stays put, so the line reads as convex.
+  const line = () => image(81, 81, (x, y) => (y === 20 ? [255, 255, 255, 255] : [30, 30, 30, 255]));
+  const rowAt = (img, x) => {
+    for (let y = 0; y < img.height; y++) if (bright(img, x, y) > 140) return y;
+    return null;
+  };
+
+  const barrel = distort(line(), { amount: 45, edges: 'stretch' });
+  assert.ok(rowAt(barrel, 40) < rowAt(barrel, 8), 'barrel: the middle sits above the ends');
+
+  const pincushion = distort(line(), { amount: -45, edges: 'stretch' });
+  assert.ok(rowAt(pincushion, 40) > rowAt(pincushion, 8), 'pincushion: the middle sits below the ends');
+});
+
+test('barrel leaves the corners empty and pincushion does not', () => {
+  const clear = (img) => {
+    let count = 0;
+    for (let i = 3; i < img.data.length; i += 4) if (img.data[i] === 0) count++;
+    return count;
+  };
+  assert.ok(clear(distort(ring(81, 25), { amount: 40 })) > 0, 'barrel reads past the source');
+  assert.equal(clear(distort(ring(81, 25), { amount: -40 })), 0, 'pincushion reads inside it');
+});
+
+test('the edge mode decides what fills what the lens cannot reach', () => {
+  const corner = (over) => at(distort(ring(81, 25), { amount: 40, ...over }), 0, 0);
+
+  assert.deepEqual(corner({ edges: 'transparent' }), [0, 0, 0, 0]);
+  assert.deepEqual(corner({ edges: 'color', background: '#ff00ff' }), [255, 0, 255, 255]);
+
+  const stretched = corner({ edges: 'stretch' });
+  assert.equal(stretched[3], 255, 'stretching leaves nothing transparent');
+  assert.deepEqual(stretched.slice(0, 3), [30, 30, 30], 'and takes the colour at the edge');
+});
+
+test('zoom crops the empty corners back out of shot', () => {
+  const empties = (zoom) => {
+    const img = distort(ring(81, 25), { amount: 40, zoom });
+    let count = 0;
+    for (let i = 3; i < img.data.length; i += 4) if (img.data[i] === 0) count++;
+    return count;
+  };
+  assert.ok(empties(100) > 0);
+  assert.equal(empties(150), 0, 'zooming in should cover them');
+});
+
+test('lens distortion is radially symmetric', () => {
+  // Odd dimensions, so "the same distance either side" really is the same.
+  const img = distort(ring(81, 25), { amount: 35, edges: 'stretch' });
+  const c = 40;
+  for (const offset of [8, 16, 24, 32]) {
+    const right = bright(img, c + offset, c);
+    assert.equal(bright(img, c - offset, c), right, `left/right differ at ${offset}`);
+    assert.equal(bright(img, c, c + offset), right, `down differs at ${offset}`);
+    assert.equal(bright(img, c, c - offset), right, `up differs at ${offset}`);
+  }
+});
+
+test('lens distortion carries alpha with the image', () => {
+  // Unlike the aberration, this is geometry: the cutout moves with its colour
+  // rather than staying put and clipping it.
+  const img = image(81, 81, (x, y) => {
+    const d = Math.hypot(x - 40, y - 40);
+    return [200, 60, 60, d < 20 ? 255 : 0];
+  });
+  const radius = (probe) => {
+    for (let x = 41; x < 81; x++) if (!probe(x)) return x - 40;
+    return null;
+  };
+  const before = radius((x) => at(img, x, 40)[3] > 128);
+  distort(img, { amount: -50, edges: 'stretch' });
+  const after = radius((x) => at(img, x, 40)[3] > 128);
+  assert.ok(after > before, `the cutout should grow with the image: ${before} to ${after}`);
+});
+
+test('lens distortion keeps the edge of a cutout clean of dark fringing', () => {
+  // Sampling across the boundary of a cutout has to weight by alpha, or the
+  // transparent black beyond it bleeds in as a dark rim.
+  //
+  // Two details decide whether this test can see the bug at all. The
+  // transparent region has to hold black rather than the subject's colour —
+  // a decoded canvas gives black, and a fixture that carries the colour
+  // through has nothing to bleed, so the check passes either way. And the edge
+  // has to be hard: across a soft alpha ramp neighbouring taps have similar
+  // alphas and the two formulas nearly agree, while a hard edge puts an opaque
+  // tap next to a transparent one, where plain bilinear scales the colour down
+  // by the coverage (240 becomes 38 at the worst pixel).
+  const img = image(81, 81, (x, y) =>
+    (Math.hypot(x - 40, y - 40) < 22 ? [240, 200, 120, 255] : [0, 0, 0, 0]));
+  distort(img, { amount: -30, edges: 'stretch' });
+
+  let checked = 0;
+  for (let y = 0; y < 81; y++) {
+    for (let x = 0; x < 81; x++) {
+      const [r, g, b, a] = at(img, x, y);
+      // The partly-covered rim, where a sample straddled the boundary.
+      if (a <= 40 || a >= 215) continue;
+      checked++;
+      assert.deepEqual([r, g, b], [240, 200, 120], `fringe at ${x},${y} (alpha ${a})`);
+    }
+  }
+  assert.ok(checked > 50, `expected a rim to check, saw ${checked} pixels`);
 });

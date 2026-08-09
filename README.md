@@ -82,6 +82,7 @@ input of the next. Each has its own settings:
 | Effect | What it does |
 | --- | --- |
 | **Blur** | Box blur, three passes, alpha-safe |
+| **Lens Distortion** | Barrel and pincushion — bends straight lines like a real lens |
 | **Chromatic Aberration** | Lens fringing: red and blue part company toward the edges |
 | **Hue Rotate** | Rotates every hue by an angle |
 | **Greyscale** | Desaturates by amount |
@@ -128,13 +129,29 @@ on their neighbours and leave their own row empty. Shifting does not wrap, so a
 band leaves a gap behind it; the toggle decides whether those gaps punch through
 to transparency, which a PNG export keeps, or land on a chosen colour.
 
+**Lens Distortion** is the radial map a lens applies to geometry: an output
+pixel at distance r from the centre reads the source at r·(1 + k·r²), with r
+measured against the half-diagonal so the same Amount looks the same on any
+aspect ratio. Positive Amount magnifies the centre relative to the edges, which
+draws the corners in and bows straight lines outward — barrel, what a wide-angle
+lens does. Negative pushes content outward and bows lines in, which is
+pincushion.
+
+The two directions leave different messes. Barrel reads from beyond the source
+at the corners, so the frame ends up with empty ones and Edges decides what goes
+there — transparency a PNG keeps, a colour, or the edge pixel smeared outward.
+Pincushion reads from inside the source, pushing its outer ring off-frame and
+covering everything. Zoom scales the whole map, which is the usual way to crop a
+barrel's empty corners back out of shot.
+
 **Chromatic Aberration** and **Channel Shift** both pull the colour channels
 apart, and the difference is where. The aberration is a lens: the fringe is zero
 at the optical centre and grows outward, with Edge bias deciding how fast — 1
 scales each channel evenly, 3 keeps the middle of the frame clean and piles the
 fringing into the corners. Amount is the fringe width at the corners as a share
 of the half-diagonal, and the fringe pair chooses which channel goes out and
-which comes in. Channel Shift is flat instead: one channel, moved by a
+which comes in — it is the same radial idea as the lens, applied per channel
+instead of to the image as a whole. Channel Shift is flat instead: one channel, moved by a
 percentage of the width and height, which is the printing-misregistration look
 rather than a lens. It will move alpha too, which slides the cutout out from
 under its own colour.
