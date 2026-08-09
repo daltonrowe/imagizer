@@ -954,6 +954,24 @@ test('a version 1 preset still loads, losing only the renamed param', () => {
   assert.equal(params.reverse, true);
 });
 
+test('a version 2 preset still loads, falling back to the merged cell size', () => {
+  // Two keys cannot merge into one without guessing which axis the user meant,
+  // and either guess silently changes the other, so the default applies.
+  const parsed = chainFromJSON(JSON.stringify({
+    format: 'imagizer.chain',
+    version: 2,
+    effects: [{ id: 'gridgate', params: { cellWidth: 20, cellHeight: 4, aperture: 35, shape: 'circle' } }],
+  }));
+
+  assert.equal(parsed.dropped, 0, 'the effect itself still loads');
+  const params = parsed.chain[0].params;
+  assert.equal(params.cell, getEffect('gridgate').params.find((p) => p.key === 'cell').default);
+  assert.equal(params.cellWidth, undefined, 'the old keys are gone, not carried along');
+  assert.equal(params.cellHeight, undefined);
+  assert.equal(params.aperture, 35, 'everything else survives');
+  assert.equal(params.shape, 'circle');
+});
+
 // ---------- vignette, spotlight ----------
 
 const flat = (w, h) => image(w, h, () => [200, 200, 200, 255]);
@@ -1396,7 +1414,7 @@ test('slicer shift is a share of the line, not a pixel count', () => {
 // ---------- grid gate ----------
 
 const gateParams = (over = {}) => ({
-  shape: 'square', cellWidth: 10, cellHeight: 10, aperture: 50,
+  shape: 'square', cell: 10, aperture: 50,
   transparent: true, background: '#ff00ff', ...over,
 });
 
@@ -1437,16 +1455,33 @@ test('grid gate blocks the expected share of the image', () => {
 
 test('grid gate repeats exactly every cell', () => {
   const img = image(120, 120, slicable);
-  getEffect('gridgate').apply(img, { params: gateParams({ cellWidth: 10, cellHeight: 20 }), rng: rng() });
+  getEffect('gridgate').apply(img, { params: gateParams({ cell: 10 }), rng: rng() });
 
   const map = passMap(img);
-  const cellW = Math.round((120 * 10) / 100);
-  const cellH = Math.round((120 * 20) / 100);
+  const cell = Math.round((120 * 10) / 100);
 
-  for (let y = 0; y < 120 - cellH; y++) {
-    for (let x = 0; x < 120 - cellW; x++) {
-      assert.equal(map[y][x], map[y][x + cellW], `column pattern broke at ${x},${y}`);
-      assert.equal(map[y][x], map[y + cellH][x], `row pattern broke at ${x},${y}`);
+  for (let y = 0; y < 120 - cell; y++) {
+    for (let x = 0; x < 120 - cell; x++) {
+      assert.equal(map[y][x], map[y][x + cell], `column pattern broke at ${x},${y}`);
+      assert.equal(map[y][x], map[y + cell][x], `row pattern broke at ${x},${y}`);
+    }
+  }
+});
+
+test('one size keeps the cells square on a crop that is not', () => {
+  // The point of a single slider: measured against the shorter side, the
+  // period is the same number of pixels both ways. A percentage per axis would
+  // stretch the cells with the frame and turn the square aperture into a
+  // rectangle.
+  const img = image(240, 80, slicable);
+  getEffect('gridgate').apply(img, { params: gateParams({ cell: 25 }), rng: rng() });
+
+  const map = passMap(img);
+  const cell = Math.round((80 * 25) / 100);
+  for (let y = 0; y < 80 - cell; y++) {
+    for (let x = 0; x < 240 - cell; x++) {
+      assert.equal(map[y][x], map[y][x + cell], `horizontal period is not ${cell} at ${x},${y}`);
+      assert.equal(map[y][x], map[y + cell][x], `vertical period is not ${cell} at ${x},${y}`);
     }
   }
 });
@@ -1488,7 +1523,7 @@ test('grid gate blocks to transparency or to a colour', () => {
 test('cell size sets the pattern period', () => {
   const period = (cell) => {
     const img = image(200, 200, slicable);
-    getEffect('gridgate').apply(img, { params: gateParams({ cellWidth: cell, cellHeight: cell }), rng: rng() });
+    getEffect('gridgate').apply(img, { params: gateParams({ cell }), rng: rng() });
     // Count transitions across the whole map, not one row: a single row can
     // land on a cell boundary and be uniformly blocked, which says nothing
     // about the period.

@@ -5,9 +5,14 @@ import { hexToRgb } from './shared.js';
  * pass through untouched, everything else is blocked.
  *
  * The grid is fixed — anchored to the top-left corner, evenly spaced, no
- * randomness at all, so it ignores the seed. Cell size is a percentage of each
- * axis and the aperture a percentage of the cell, which keeps the pattern the
- * same shape whatever size the crop is rendered at.
+ * randomness at all, so it ignores the seed. Cell size is a percentage of the
+ * shorter side and the aperture a percentage of the cell, which keeps the
+ * pattern the same shape whatever size the crop is rendered at.
+ *
+ * One size for both axes, measured against the shorter side, is what makes the
+ * cells actually square on a crop that isn't: a percentage per axis would
+ * stretch them with the frame, and stretched cells make the square aperture a
+ * rectangle and the circle an ellipse.
  *
  * Square apertures give a window grid; circular ones give dots, and at 100% a
  * circle still blocks the cell corners because it is inscribed in the cell.
@@ -31,8 +36,7 @@ export default {
         { value: 'circle', label: 'Circle' },
       ],
     },
-    { key: 'cellWidth', label: 'Cell width', type: 'range', min: 1, max: 50, step: 1, default: 6, unit: '%', random: [2, 16] },
-    { key: 'cellHeight', label: 'Cell height', type: 'range', min: 1, max: 50, step: 1, default: 6, unit: '%', random: [2, 16] },
+    { key: 'cell', label: 'Cell size', type: 'range', min: 1, max: 50, step: 1, default: 6, unit: '%', random: [2, 16] },
     { key: 'aperture', label: 'Aperture', type: 'range', min: 5, max: 100, step: 1, default: 60, unit: '%', random: [30, 85] },
     { key: 'transparent', label: 'Gaps transparent', type: 'toggle', default: true },
     { key: 'background', label: 'Gap colour', type: 'color', default: '#000000', showWhen: (p) => !p.transparent },
@@ -41,8 +45,7 @@ export default {
   apply(image, { params }) {
     const { data, width, height } = image;
 
-    const cellW = Math.max(2, Math.round((width * params.cellWidth) / 100));
-    const cellH = Math.max(2, Math.round((height * params.cellHeight) / 100));
+    const cell = Math.max(2, Math.round((Math.min(width, height) * params.cell) / 100));
     const open = params.aperture / 100;
     const circle = params.shape === 'circle';
 
@@ -51,11 +54,11 @@ export default {
 
     for (let y = 0; y < height; y++) {
       // Position within the cell, as -0.5..0.5 from its centre.
-      const fy = ((y % cellH) + 0.5) / cellH - 0.5;
+      const fy = ((y % cell) + 0.5) / cell - 0.5;
       const fySq = fy * fy;
 
       for (let x = 0; x < width; x++) {
-        const fx = ((x % cellW) + 0.5) / cellW - 0.5;
+        const fx = ((x % cell) + 0.5) / cell - 0.5;
 
         // Doubled so the test reads directly against `open`: 100% square fills
         // the cell edge to edge, 100% circle is the one inscribed in it.

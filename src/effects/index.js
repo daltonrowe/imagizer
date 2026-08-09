@@ -77,8 +77,12 @@ export const CHAIN_FORMAT = 'imagizer.chain';
  *    clamp to "no cap at all", so dropping the old key and falling back to the
  *    default degrades an old preset far more gracefully than reinterpreting it.
  *    Presets written at version 1 still load; they just lose that one setting.
+ * 3: Grid Gate's `cellWidth` and `cellHeight` (a percentage per axis) became a
+ *    single `cell` (a percentage of the shorter side). Two keys cannot merge
+ *    into one without guessing which the user meant, and either guess changes
+ *    the other axis, so an older preset falls back to the default cell size.
  */
-export const CHAIN_VERSION = 2;
+export const CHAIN_VERSION = 3;
 
 /** Fill in defaults and clamp anything out of range or unrecognised. */
 export function normalizeParams(effect, params = {}) {

@@ -111,11 +111,14 @@ hues the photo never had. Luminance mode snaps brightness and scales the
 channels to match, so each pixel keeps its own hue and far more colours survive.
 
 **Grid Gate** passes pixels through a fixed grid of apertures and blocks the
-rest. Cell size is a percentage of each axis and the aperture a percentage of the
-cell, so the pattern keeps its shape at any crop size. A square aperture at 100%
-is a no-op; a circle at 100% still blocks the cell corners, since it is inscribed
-in the cell — which is why circular apertures pass π/4 of the image. As with the
-slicer, blocked pixels either punch through to transparency or take a colour.
+rest. One cell size covers both axes, as a percentage of the shorter side, and
+the aperture is a percentage of the cell, so the pattern keeps its shape at any
+crop size. Measuring against the shorter side is what keeps the cells square on
+a crop that isn't: a percentage per axis would stretch them with the frame and
+make the square aperture a rectangle. A square aperture at 100% is a no-op; a
+circle at 100% still blocks the cell corners, since it is inscribed in the cell
+— which is why circular apertures pass π/4 of the image. As with the slicer,
+blocked pixels either punch through to transparency or take a colour.
 
 **Slicer** cuts the image into bands — horizontal ones are rows that shift left
 and right, vertical ones are columns that shift up and down — with band size,
@@ -236,7 +239,7 @@ size as a preset you can copy, download, or paste back in:
 ```json
 {
   "format": "imagizer.chain",
-  "version": 2,
+  "version": 3,
   "seed": "golden hour",
   "crop": { "width": 1080, "height": 1080 },
   "effects": [
@@ -252,9 +255,11 @@ effects it doesn't recognise and says how many, so a preset from a newer version
 degrades instead of failing.
 
 Version 2 renamed Pixel Sort's `maxLength` (pixels) to `maxRun` (a percentage of
-the line). Version 1 presets still load — they just fall back to the default for
-that one setting, which is a far better outcome than reading a stored `200` as a
-percentage and clamping it to an uncapped line.
+the line). Version 3 merged Grid Gate's `cellWidth` and `cellHeight` into one
+`cell`. Older presets still load — they just fall back to the default for that
+one setting, which is a far better outcome than reading a stored `200` as a
+percentage and clamping it to an uncapped line, or picking one of two axes and
+silently changing the other.
 
 ### Adding an effect
 
