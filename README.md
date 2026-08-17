@@ -147,6 +147,7 @@ input of the next. Each has its own settings:
 | **Ripple** | Sinusoidal waves — rings, rows or columns |
 | **Noise Warp** | Displaces by a smooth noise field |
 | **Kaleidoscope** | Folds the frame into a wedge and mirrors it around |
+| **Mirror** | Reflects one half onto the other, on either axis or both |
 | **Scale Repeat** | Stacks scaled copies of the image on itself — the droste |
 | **Colour Key** | Knocks a colour out to transparency, matching on hue |
 | **Vignette** | Darkens in from the edges, heaviest in the corners |
@@ -337,6 +338,17 @@ rotation preserves radius, so it is the one geometric effect that cannot leave a
 gap. Noise warp's lattice and Block Shuffle's grid are both measured in cells
 across the image rather than in pixels, so the same seed distorts the preview and
 the export identically instead of rearranging itself on download.
+
+**Mirror** reflects one half of the image onto the other rather than flipping
+it. A flip shows the same content the other way round; this keeps one half and
+replaces the other with its reflection, so the result is symmetric. On Both that
+is four-fold symmetry — one quadrant reflected into all four corners — which is
+why Both is worth having, where for a flip it would only ever mean a 180°
+rotation. Which half survives is a choice rather than a default, since the left
+half reflected rightward and the right half reflected leftward are different
+pictures of the same photo. The remap is exact: every output pixel is some input
+pixel and never a blend of two, so a hard-edged graphic stays hard-edged, and on
+an odd width or height the middle row and column map to themselves.
 
 **Scale Repeat** lays copies of the image back over itself, each one a scaling
 of the image *as it arrived* rather than of the copy before it — so the sizes are

@@ -61,11 +61,11 @@ test('every effect is registered with the metadata the UI needs', () => {
     'channelshift', 'channelsort', 'channelthreshold', 'chromatic',
     'colorize', 'colorkey', 'diffkey', 'duotone', 'echo', 'edgedetect',
     'grain', 'greyscale', 'gridgate', 'halftone', 'huerotate', 'invert',
-    'kaleidoscope', 'lens', 'levels', 'lightleak', 'palette', 'pixelate',
-    'pixelsort', 'posterize', 'randomdither', 'reblend', 'reblendprevious',
-    'ripple', 'scalerepeat', 'scanlines', 'shapemask', 'sharpen', 'slicer',
-    'solarize', 'spotlight', 'starfilter', 'streak', 'threshold',
-    'tiltshift', 'twirl', 'vignette', 'warp',
+    'kaleidoscope', 'lens', 'levels', 'lightleak', 'mirror', 'palette',
+    'pixelate', 'pixelsort', 'posterize', 'randomdither', 'reblend',
+    'reblendprevious', 'ripple', 'scalerepeat', 'scanlines', 'shapemask',
+    'sharpen', 'slicer', 'solarize', 'spotlight', 'starfilter', 'streak',
+    'threshold', 'tiltshift', 'twirl', 'vignette', 'warp',
   ]);
   for (const effect of EFFECTS) {
     assert.equal(typeof effect.label, 'string');
@@ -2280,7 +2280,7 @@ test('every effect leaves fully transparent pixels alone or transparent', () => 
     'shapemask',    // fills outside the shape
     'gridgate',     // fills the blocked gaps when not transparent
     // Effects that move opaque pixels onto empty ground.
-    'blockshuffle', 'slicer', 'scalerepeat',
+    'blockshuffle', 'slicer', 'scalerepeat', 'mirror',
     'lens', 'ripple', 'warp', 'kaleidoscope', 'twirl',
     // Effects that spread alpha itself, which is what softening a cutout is.
     'blur', 'tiltshift', 'pixelate',
@@ -3116,4 +3116,102 @@ test('a shrinking copy carries its own transparency', () => {
   run('scalerepeat', img, { iterations: 1, scale: 50, mode: 'normal', origin: 'center', opacity: 100 });
   for (let i = 3; i < img.data.length; i += 4) assert.equal(img.data[i], 255, 'nothing went transparent');
   assert.deepEqual(at(img, 2, 2), [200, 40, 40, 255], 'the corner is the original, untouched');
+});
+
+// ---------- mirror ----------
+
+/** Every pixel distinct, so a reflection is provable rather than plausible. */
+const unique = (w, h) => image(w, h, (x, y) => [x * 3 + 1, y * 3 + 1, (x * 7 + y * 11) % 256, 255]);
+
+test('mirror reflects one half onto the other, and leaves that half alone', () => {
+  const source = unique(64, 64);
+  const img = run('mirror', unique(64, 64), { axis: 'x', flipX: false });
+
+  for (let y = 0; y < 64; y += 7) {
+    for (let x = 0; x < 32; x++) {
+      assert.deepEqual(at(img, x, y), at(source, x, y), `the kept half moved at ${x},${y}`);
+      assert.deepEqual(at(img, 63 - x, y), at(source, x, y), `no reflection at ${63 - x},${y}`);
+    }
+  }
+});
+
+test('mirror is a reflection, not a flip', () => {
+  // A flip would leave the right half showing the original left content in
+  // reverse *and* replace the left half; a mirror keeps one side untouched.
+  const source = unique(32, 32);
+  const flipped = run('mirror', unique(32, 32), { axis: 'x' });
+  assert.deepEqual(at(flipped, 0, 5), at(source, 0, 5), 'the left edge is its own pixel');
+  assert.notDeepEqual(at(flipped, 31, 5), at(source, 31, 5), 'the right edge is not');
+  assert.deepEqual(at(flipped, 31, 5), at(source, 0, 5), 'it is the left edge reflected');
+});
+
+test('the axis picks which way the reflection runs', () => {
+  const source = unique(48, 48);
+
+  const acrossY = run('mirror', unique(48, 48), { axis: 'y' });
+  assert.deepEqual(at(acrossY, 5, 47), at(source, 5, 0), 'the bottom takes the top');
+  assert.deepEqual(at(acrossY, 5, 3), at(source, 5, 3), 'the top is untouched');
+  assert.deepEqual(at(acrossY, 40, 3), at(source, 40, 3), 'and nothing moved sideways');
+
+  const both = run('mirror', unique(48, 48), { axis: 'both' });
+  // Four-fold symmetry: one quadrant reflected into all four corners.
+  const corner = at(both, 3, 4);
+  assert.deepEqual(corner, at(source, 3, 4), 'the kept quadrant is itself');
+  assert.deepEqual(at(both, 44, 4), corner, 'reflected across');
+  assert.deepEqual(at(both, 3, 43), corner, 'reflected down');
+  assert.deepEqual(at(both, 44, 43), corner, 'and into the far corner');
+});
+
+test('the side toggles choose which half survives', () => {
+  const source = unique(32, 32);
+
+  const right = run('mirror', unique(32, 32), { axis: 'x', flipX: true });
+  assert.deepEqual(at(right, 31, 5), at(source, 31, 5), 'the right half is kept');
+  assert.deepEqual(at(right, 0, 5), at(source, 31, 5), 'and the left takes its reflection');
+
+  const bottom = run('mirror', unique(32, 32), { axis: 'y', flipY: true });
+  assert.deepEqual(at(bottom, 5, 31), at(source, 5, 31), 'the bottom half is kept');
+  assert.deepEqual(at(bottom, 5, 0), at(source, 5, 31), 'and the top takes its reflection');
+});
+
+test('an odd size keeps its middle row and column exactly', () => {
+  // 2*x > width-1 rather than a comparison against a half: the middle pixel of
+  // an odd row maps to itself, where rounding a centre would push it aside.
+  const source = unique(41, 41);
+  const img = run('mirror', unique(41, 41), { axis: 'both' });
+  for (const offset of [0, 7, 20, 33, 40]) {
+    assert.deepEqual(at(img, 20, offset <= 20 ? offset : 40 - offset),
+      at(source, 20, offset <= 20 ? offset : 40 - offset), 'the middle column is its own');
+  }
+  assert.deepEqual(at(img, 20, 20), at(source, 20, 20), 'and the exact centre is untouched');
+});
+
+test('mirroring is exact — no pixel is a blend of two', () => {
+  // Every value in the output must be a value that was in the input, so a hard
+  // edge stays hard rather than picking up an interpolated seam.
+  const source = unique(33, 33);
+  const seen = new Set();
+  for (let i = 0; i < source.data.length; i += 4) seen.add(source.data[i]);
+
+  const img = run('mirror', unique(33, 33), { axis: 'both' });
+  for (let i = 0; i < img.data.length; i += 4) {
+    assert.ok(seen.has(img.data[i]), `invented the value ${img.data[i]}`);
+  }
+});
+
+test('mirroring twice is the same as mirroring once', () => {
+  // Reflection is idempotent: the second pass copies the half it already made.
+  for (const axis of ['x', 'y', 'both']) {
+    const once = run('mirror', unique(40, 24), { axis });
+    const twice = run('mirror', run('mirror', unique(40, 24), { axis }), { axis });
+    assert.deepEqual([...twice.data], [...once.data], axis);
+  }
+});
+
+test('mirror carries alpha with the pixel', () => {
+  const img = image(40, 8, (x) => [200, 60, 60, x < 20 ? 255 : 0]);
+  run('mirror', img, { axis: 'x' });
+  for (let x = 20; x < 40; x++) {
+    assert.equal(at(img, x, 4)[3], 255, `the reflected half should be opaque at ${x}`);
+  }
 });

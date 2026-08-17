@@ -39,6 +39,7 @@ import twirl from './twirl.js';
 import ripple from './ripple.js';
 import warp from './warp.js';
 import kaleidoscope from './kaleidoscope.js';
+import mirror from './mirror.js';
 import scalerepeat from './scalerepeat.js';
 import colorkey from './colorkey.js';
 import vignette from './vignette.js';
@@ -89,6 +90,7 @@ export const EFFECTS = [
   ripple,
   warp,
   kaleidoscope,
+  mirror,
   scalerepeat,
   colorkey,
   vignette,
