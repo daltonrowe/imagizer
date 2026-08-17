@@ -24,6 +24,7 @@
       <canvas id="layer" class="layer"></canvas>
     </div>
     <canvas id="preview" class="preview" hidden></canvas>
+    <div id="previewGrid" class="preview-grid" hidden></div>
     <div id="frame" class="frame" aria-hidden="true"></div>
 
     <div id="empty" class="empty">
@@ -56,6 +57,11 @@
 
     <div class="panes">
     <div class="pane" id="paneCrop" role="tabpanel" aria-labelledby="tabCrop">
+    <div class="crops-row">
+      <div class="crops" id="crops" role="group" aria-label="Crops"></div>
+      <button id="addCrop" class="btn btn-icon btn-add-crop" type="button" title="Add a crop" aria-label="Add a crop">+</button>
+    </div>
+
     <div class="presets" id="presets" role="group" aria-label="Crop size presets"></div>
 
     <div class="row row-inline">

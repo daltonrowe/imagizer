@@ -320,14 +320,15 @@ test('normalizeChain drops unknown effects', () => {
   assert.deepEqual(chain.map((item) => item.id), ['blur', 'greyscale']);
 });
 
-test('JSON round-trips a chain with its seed and crop', () => {
+test('JSON round-trips a chain with its seed and crops', () => {
   const chain = randomChain(createRng('preset'));
-  const json = chainToJSON({ chain, seed: 'golden hour', crop: { w: 1080, h: 1350 } });
+  const crops = [{ w: 1080, h: 1350 }, { w: 1080, h: 1920 }];
+  const json = chainToJSON({ chain, seed: 'golden hour', crops });
   const parsed = chainFromJSON(json);
 
   assert.deepEqual(parsed.chain, chain);
   assert.equal(parsed.seed, 'golden hour');
-  assert.deepEqual(parsed.crop, { w: 1080, h: 1350 });
+  assert.deepEqual(parsed.crops, crops);
   assert.equal(parsed.dropped, 0);
 
   // And the round-tripped preset renders identically.
@@ -2894,4 +2895,26 @@ test('the difference key notices a change in alpha alone', () => {
   });
   assert.equal(at(img, 5, 2)[3], 255, 'alpha changed here, so it stays');
   assert.equal(at(img, 35, 2)[3], 0, 'nothing changed here, so it goes');
+});
+
+test('a version 3 preset\'s single crop reads as a list of one', () => {
+  // Widening `crop` into `crops` loses nothing, unlike the earlier migrations —
+  // there is no guess to make, so an old preset keeps its size rather than
+  // falling back to a default.
+  const parsed = chainFromJSON(JSON.stringify({
+    format: 'imagizer.chain',
+    version: 3,
+    crop: { width: 1200, height: 630 },
+    effects: [{ id: 'blur', params: { radius: 4 } }],
+  }));
+  assert.deepEqual(parsed.crops, [{ w: 1200, h: 630 }]);
+  assert.equal(parsed.chain[0].params.radius, 4);
+});
+
+test('a preset with no crops at all still loads', () => {
+  const parsed = chainFromJSON(JSON.stringify({
+    format: 'imagizer.chain',
+    effects: [{ id: 'blur' }],
+  }));
+  assert.deepEqual(parsed.crops, []);
 });

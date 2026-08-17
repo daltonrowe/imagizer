@@ -799,3 +799,143 @@ input[type="range"]:active::-moz-range-thumb { background: #8fbcff; }
 @media (min-width: 820px) {
   .presets { flex-wrap: wrap; overflow-x: visible; }
 }
+
+
+/* ---------- crops ---------- */
+
+/*
+ * The crop list is the app's one piece of horizontally scrolling UI. Several
+ * crops of one photo are usually similar sizes, so the labels are what tell
+ * them apart, and they need room to be read rather than being squeezed to fit.
+ */
+.crops-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.crops {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.crops::-webkit-scrollbar { display: none; }
+
+.crop-chip {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 44px;
+  padding: 7px 30px 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.crop-chip[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, var(--panel-2));
+  color: #fff;
+}
+
+.crop-chip[aria-pressed="true"] small,
+.crop-chip[aria-pressed="true"] + .crop-drop { color: rgba(255,255,255,.8); }
+
+.crop-chip small {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The remove control sits inside its chip rather than beside it, because a
+ * button inside a button is invalid — so the chip is the button and this is a
+ * sibling positioned over it.
+ */
+.crop-drop {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 30px;
+  height: 100%;
+  border: 0;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: none;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.crop-drop:hover { color: var(--text); }
+
+.btn-add-crop {
+  flex: 0 0 auto;
+  align-self: stretch;
+  height: auto;
+}
+
+/* ---------- multi-crop preview ---------- */
+
+/*
+ * The crop frame outlines the *active* crop, which says nothing useful once
+ * the stage is showing all of them at once — so it goes away with the grid.
+ */
+.stage.grid .frame { display: none; }
+
+/*
+ * Step 2 with more than one crop lays them out side by side, each at its own
+ * aspect ratio. A single crop keeps the old frame-aligned preview: it is the
+ * exact shape and place the file will be, and a grid of one would move it for
+ * no reason.
+ */
+.preview-grid {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px;
+  pointer-events: none;
+}
+
+.preview-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-cell canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.5);
+}
+
+.preview-cell span {
+  position: absolute;
+  bottom: 3px;
+  left: 3px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgb(0 0 0 / 0.6);
+  color: #fff;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}

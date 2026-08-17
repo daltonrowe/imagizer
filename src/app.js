@@ -1,6 +1,6 @@
 import { loadImageFile, hasTransparency } from './image.js';
 import { createCropper, MIN_ZOOM, MAX_ZOOM } from './cropper.js';
-import { loadSettings, saveSettings, clampSize, MIN_SIZE, MAX_SIZE } from './storage.js';
+import { loadSettings, saveSettings, clampSize, MIN_SIZE, MAX_SIZE, MAX_CROPS } from './storage.js';
 import { createRng, randomSeed, normalizeSeed } from './random.js';
 import {
   EFFECTS,
@@ -12,6 +12,7 @@ import {
   chainFromJSON,
 } from './effects/index.js';
 import { renderPipeline } from './pipeline.js';
+import { defaultView } from './framing.js';
 
 const PRESETS = [
   { label: 'Square', w: 1080, h: 1080 },
@@ -33,6 +34,9 @@ const el = {
   frame: document.getElementById('frame'),
   empty: document.getElementById('empty'),
   presets: document.getElementById('presets'),
+  crops: document.getElementById('crops'),
+  addCrop: document.getElementById('addCrop'),
+  previewGrid: document.getElementById('previewGrid'),
   cropW: document.getElementById('cropW'),
   cropH: document.getElementById('cropH'),
   swap: document.getElementById('swap'),
@@ -141,7 +145,7 @@ function currentJSON() {
   return chainToJSON({
     chain,
     seed: settings.seed,
-    crop: { w: settings.cropW, h: settings.cropH },
+      crops: settings.crops.map((crop) => ({ width: crop.w, height: crop.h })),
   });
 }
 
@@ -387,7 +391,7 @@ el.jsonApply.addEventListener('click', () => {
   try {
     const preset = chainFromJSON(el.json.value);
     if (preset.seed) applySeed(preset.seed);
-    if (preset.crop) applyCrop(preset.crop.w, preset.crop.h);
+    if (preset.crops.length) applyCrops(preset.crops);
     openCards.clear();
     updateChain(preset.chain);
     toast(preset.dropped
@@ -481,6 +485,7 @@ function schedulePreview() {
  */
 function invalidatePreview() {
   el.preview.hidden = true;
+  el.previewGrid.hidden = true;
   schedulePreview();
 }
 
@@ -491,33 +496,143 @@ function renderPreview() {
   // what the chain is applied to and the stage has nothing else on it.
   if (step !== 'effects' || !cropper.hasSource() || !frame) {
     el.preview.hidden = true;
+    el.previewGrid.hidden = true;
+    el.stage.classList.remove('grid');
     return;
   }
 
-  // Cap the working size by the crop itself, so a small crop is never upscaled
-  // for the preview and then downscaled again by the browser.
-  const density = Math.min(window.devicePixelRatio || 1, 2);
-  const scale = Math.min(
-    settings.cropW / frame.width,
-    PREVIEW_MAX_EDGE / Math.max(frame.width, frame.height),
-    density,
-  );
-  const width = Math.max(1, Math.round(frame.width * Math.max(scale, 0.5)));
-  const height = Math.max(1, Math.round(frame.height * Math.max(scale, 0.5)));
+  if (settings.crops.length > 1) {
+    el.preview.hidden = true;
+    el.stage.classList.add('grid');
+    renderPreviewGrid();
+    return;
+  }
 
-  el.preview.width = width;
-  el.preview.height = height;
+  el.stage.classList.remove('grid');
+  // One crop keeps the frame-aligned preview: it is the exact shape and place
+  // the file will be, and laying a grid of one out would move it for nothing.
+  el.previewGrid.hidden = true;
+  const size = previewSize(activeCrop(), frame.width, frame.height);
+  el.preview.width = size.width;
+  el.preview.height = size.height;
   renderPipeline({
     ctx: el.preview.getContext('2d', { willReadFrequently: true }),
     drawCrop: cropper.drawCrop,
-    width,
-    height,
+    ...size,
     chain,
     rng,
   });
 
   positionPreview(frame);
   el.preview.hidden = false;
+}
+
+/**
+ * Pixel size for a preview shown at `boxW` x `boxH` CSS pixels.
+ *
+ * Capped by the crop itself, so a small crop is never upscaled for the preview
+ * and then downscaled again by the browser.
+ */
+function previewSize(crop, boxW, boxH) {
+  const density = Math.min(window.devicePixelRatio || 1, 2);
+  const scale = Math.min(
+    crop.w / boxW,
+    PREVIEW_MAX_EDGE / Math.max(boxW, boxH),
+    density,
+  );
+  return {
+    width: Math.max(1, Math.round(boxW * Math.max(scale, 0.5))),
+    height: Math.max(1, Math.round(boxH * Math.max(scale, 0.5))),
+  };
+}
+
+/**
+ * Every crop at once, laid out to fit the stage.
+ *
+ * They are drawn through `cropper.drawView`, which takes a framing rather than
+ * reading the live one, so a crop does not have to be the active one to be
+ * shown — the alternative would be making each one active in turn and putting
+ * the stage back afterwards.
+ *
+ * Each cell renders the whole chain at its own size, so this is the one place
+ * in the app where preview cost scales with how much you have set up. The crop
+ * count is capped for exactly that reason.
+ */
+function renderPreviewGrid() {
+  const stageW = el.stage.clientWidth;
+  const stageH = el.stage.clientHeight;
+  const box = gridBox(settings.crops, stageW, stageH);
+
+  el.previewGrid.replaceChildren(...settings.crops.map((crop, index) => {
+    const aspect = crop.w / crop.h;
+    let width = box;
+    let height = box / aspect;
+    if (height > box) {
+      height = box;
+      width = box * aspect;
+    }
+
+    const cell = document.createElement('div');
+    cell.className = 'preview-cell';
+    cell.style.width = `${width}px`;
+    cell.style.height = `${height}px`;
+
+    const canvas = document.createElement('canvas');
+    const size = previewSize(crop, width, height);
+    canvas.width = size.width;
+    canvas.height = size.height;
+    renderPipeline({
+      ctx: canvas.getContext('2d', { willReadFrequently: true }),
+      drawCrop: (ctx, w, h, options) => cropper.drawView(viewFor(crop), ctx, w, h, options),
+      ...size,
+      chain,
+      rng,
+    });
+
+    const label = document.createElement('span');
+    label.textContent = `${crop.w}\u00d7${crop.h}`;
+    cell.append(canvas, label);
+    if (index === settings.active) cell.classList.add('active');
+    return cell;
+  }));
+  el.previewGrid.hidden = false;
+}
+
+/**
+ * The largest square a cell can occupy and still have every crop fit.
+ *
+ * Crops are laid out on their longest edge rather than by area, so a tall crop
+ * and a wide one of the same size read as the same size — which is the point of
+ * seeing them together.
+ */
+function gridBox(crops, stageW, stageH) {
+  const gap = 10;
+  const padding = 12;
+  const availW = Math.max(40, stageW - padding * 2);
+  const availH = Math.max(40, stageH - padding * 2);
+
+  let best = 24;
+  for (let columns = 1; columns <= crops.length; columns++) {
+    const rows = Math.ceil(crops.length / columns);
+    const box = Math.min(
+      (availW - gap * (columns - 1)) / columns,
+      (availH - gap * (rows - 1)) / rows,
+    );
+    if (box > best) best = box;
+  }
+  return best;
+}
+
+/** A crop as a framing the cropper can draw, defaulting anything unset. */
+function viewFor(crop) {
+  const stats = cropper.getStats();
+  const source = stats ? { width: stats.source.w, height: stats.source.h } : { width: crop.w, height: crop.h };
+  const fallback = defaultView(source);
+  return {
+    crop: { w: crop.w, h: crop.h },
+    center: crop.center ?? fallback.center,
+    zoom: crop.zoom ?? fallback.zoom,
+  };
 }
 
 function positionPreview(frame) {
@@ -530,6 +645,143 @@ function positionPreview(frame) {
 // the preview is hidden anyway, and hiding it on a stray tap during step 2
 // would blank the stage with nothing to bring it back.
 
+// ---------- crops ----------
+
+/**
+ * A crop is a size plus a framing: `{ w, h, center, zoom }`. Several of them
+ * share one photo, one seed and one effect chain, which is the point — a set of
+ * sizes of the same picture should look like a set, not like separate edits.
+ *
+ * Only the active one is on the stage and takes the gestures; the rest keep
+ * their framing as data until it is their turn, or until something needs to
+ * draw them, which `cropper.drawView` can do without making them active.
+ */
+const activeCrop = () => settings.crops[settings.active] ?? settings.crops[0];
+
+/** The active crop's framing, read back off the cropper and stored. */
+function stashFraming() {
+  if (!cropper.hasSource()) return;
+  const view = cropper.getView();
+  const crop = activeCrop();
+  crop.center = view.center;
+  crop.zoom = view.zoom;
+}
+
+/** Hand a crop's framing to the cropper, defaulting a crop that has none yet. */
+function loadFraming(crop) {
+  if (!cropper.hasSource()) {
+    cropper.setCrop(crop.w, crop.h);
+    return;
+  }
+  const fallback = defaultView(cropper.getStats().source.w
+    ? { width: cropper.getStats().source.w, height: cropper.getStats().source.h }
+    : { width: crop.w, height: crop.h });
+  cropper.setView({
+    crop: { w: crop.w, h: crop.h },
+    center: crop.center ?? fallback.center,
+    zoom: crop.zoom ?? fallback.zoom,
+  });
+}
+
+function selectCrop(index, { force = false } = {}) {
+  const next = Math.min(Math.max(index, 0), settings.crops.length - 1);
+  if (!force && next === settings.active) return;
+  stashFraming();
+  settings.active = next;
+  saveSettings(settings);
+  loadFraming(activeCrop());
+  syncCropInputs();
+  renderCrops();
+  renderPresets();
+  updateReadout(cropper.getStats());
+  invalidatePreview();
+}
+
+function addCrop() {
+  if (settings.crops.length >= MAX_CROPS) {
+    toast(`Up to ${MAX_CROPS} crops.`);
+    return;
+  }
+  stashFraming();
+  // A new crop starts as a copy of the one you were looking at, since that is
+  // the framing you already chose; changing the size is the next thing you do.
+  const from = activeCrop();
+  settings.crops.push({ w: from.w, h: from.h, center: from.center, zoom: from.zoom });
+  settings.active = settings.crops.length - 1;
+  saveSettings(settings);
+  loadFraming(activeCrop());
+  syncCropInputs();
+  renderCrops();
+  updateReadout(cropper.getStats());
+  invalidatePreview();
+}
+
+function dropCrop(index) {
+  if (settings.crops.length <= 1) return;
+  const wasActive = index === settings.active;
+  if (!wasActive) stashFraming();
+  settings.crops.splice(index, 1);
+  settings.active = Math.min(settings.active > index ? settings.active - 1 : settings.active,
+    settings.crops.length - 1);
+  saveSettings(settings);
+  if (wasActive) loadFraming(activeCrop());
+  syncCropInputs();
+  renderCrops();
+  renderPresets();
+  updateReadout(cropper.getStats());
+  invalidatePreview();
+}
+
+function renderCrops() {
+  el.crops.replaceChildren(...settings.crops.flatMap((crop, index) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'crop-chip';
+    chip.setAttribute('aria-pressed', String(index === settings.active));
+    chip.innerHTML = `${index + 1}<small>${crop.w}&times;${crop.h}</small>`;
+    chip.addEventListener('click', () => selectCrop(index));
+
+    const drop = document.createElement('button');
+    drop.type = 'button';
+    drop.className = 'crop-drop';
+    drop.textContent = '\u00d7';
+    drop.title = 'Remove this crop';
+    drop.setAttribute('aria-label', `Remove crop ${index + 1}`);
+    drop.disabled = settings.crops.length <= 1;
+    drop.addEventListener('click', () => dropCrop(index));
+
+    return [chip, drop];
+  }));
+  el.addCrop.disabled = settings.crops.length >= MAX_CROPS;
+}
+
+/** Replace the whole crop list, keeping the framing of any crop that survives. */
+function applyCrops(next) {
+  stashFraming();
+  const kept = settings.crops;
+  settings.crops = next.slice(0, MAX_CROPS).map((crop, index) => ({
+    w: clampSize(crop.w, kept[0].w),
+    h: clampSize(crop.h, kept[0].h),
+    // A preset carries sizes, not framing, so reuse what was already framed at
+    // that slot rather than snapping every crop back to the middle.
+    center: kept[index]?.center,
+    zoom: kept[index]?.zoom,
+  }));
+  settings.active = 0;
+  saveSettings(settings);
+  loadFraming(activeCrop());
+  syncCropInputs();
+  renderCrops();
+  renderPresets();
+  updateReadout(cropper.getStats());
+  invalidatePreview();
+}
+
+function syncCropInputs() {
+  el.cropW.value = activeCrop().w;
+  el.cropH.value = activeCrop().h;
+}
+
 // ---------- crop size ----------
 
 function renderPresets() {
@@ -538,22 +790,23 @@ function renderPresets() {
     button.type = 'button';
     button.className = 'chip';
     button.innerHTML = `${preset.label}<small>${preset.w}&times;${preset.h}</small>`;
-    button.setAttribute('aria-pressed', String(preset.w === settings.cropW && preset.h === settings.cropH));
+    button.setAttribute('aria-pressed', String(preset.w === activeCrop().w && preset.h === activeCrop().h));
     button.addEventListener('click', () => applyCrop(preset.w, preset.h));
     return button;
   }));
 }
 
 function applyCrop(w, h, { syncInputs = true } = {}) {
-  settings.cropW = clampSize(w, settings.cropW);
-  settings.cropH = clampSize(h, settings.cropH);
-  if (syncInputs) {
-    el.cropW.value = settings.cropW;
-    el.cropH.value = settings.cropH;
-  }
+  const crop = activeCrop();
+  crop.w = clampSize(w, crop.w);
+  crop.h = clampSize(h, crop.h);
+  if (syncInputs) syncCropInputs();
   saveSettings(settings);
   renderPresets();
-  cropper.setCrop(settings.cropW, settings.cropH);
+  renderCrops();
+  cropper.setCrop(crop.w, crop.h);
+  // Resizing re-clamps the framing, so store what the cropper settled on.
+  stashFraming();
   updateReadout(cropper.getStats());
   invalidatePreview();
 }
@@ -572,30 +825,40 @@ el.cropH.addEventListener('input', readSizeInputs);
 
 // Snap the fields back to the stored values when the user leaves them blank.
 for (const input of [el.cropW, el.cropH]) {
-  input.addEventListener('blur', () => {
-    el.cropW.value = settings.cropW;
-    el.cropH.value = settings.cropH;
-  });
+  input.addEventListener('blur', syncCropInputs);
 }
 
-el.swap.addEventListener('click', () => applyCrop(settings.cropH, settings.cropW));
+el.swap.addEventListener('click', () => applyCrop(activeCrop().h, activeCrop().w));
+el.addCrop.addEventListener('click', addCrop);
 
 // ---------- zoom ----------
 
 el.zoom.addEventListener('input', () => {
   cropper.setZoom(Number(el.zoom.value));
+  stashFraming();
   invalidatePreview();
 });
 el.reset.addEventListener('click', () => {
   cropper.reset();
+  stashFraming();
   invalidatePreview();
 });
+
+let saveTimer = 0;
+function persist() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => saveSettings(settings), 400);
+}
 
 function updateReadout(stats) {
   if (!stats) {
     el.zoomVal.textContent = '1.00×';
     return;
   }
+  // A pan or a pinch lands here, and the framing it produced belongs to the
+  // crop it was made on — otherwise switching crops would lose it.
+  stashFraming();
+  persist();
   el.zoom.value = String(stats.zoom);
   el.zoomVal.textContent = `${stats.zoom.toFixed(2)}×`;
 
@@ -621,7 +884,14 @@ async function openFile(file) {
     const canvas = await loadImageFile(file);
     sourceName = file.name?.replace(/\.[^.]+$/, '') || 'photo';
     sourceHasAlpha = hasTransparency(canvas);
+    // A framing is a point in one particular photo, so a new one invalidates
+    // every crop's: they all start centred again, and the sizes carry over.
+    for (const crop of settings.crops) {
+      delete crop.center;
+      delete crop.zoom;
+    }
     cropper.setSource(canvas);
+    loadFraming(activeCrop());
     el.stage.classList.remove('empty-state');
     el.empty.hidden = true;
     el.exportBtn.disabled = false;
@@ -665,34 +935,53 @@ el.exportBtn.addEventListener('click', async () => {
   if (!cropper.hasSource()) return;
   el.exportBtn.disabled = true;
   try {
+    stashFraming();
     const type = settings.format;
     const jpeg = type === 'image/jpeg';
+    const files = [];
 
     // Same pipeline as the preview — crop, then effects — but at full crop
-    // resolution, which makes this the authoritative render.
-    const canvas = document.createElement('canvas');
-    canvas.width = settings.cropW;
-    canvas.height = settings.cropH;
-    renderPipeline({
-      ctx: canvas.getContext('2d', { willReadFrequently: true }),
-      drawCrop: cropper.drawCrop,
-      width: canvas.width,
-      height: canvas.height,
-      // PNG keeps the alpha channel; JPEG cannot, so flatten predictably.
-      background: jpeg ? JPEG_MATTE : null,
-      chain,
-      rng,
-    });
+    // resolution, which makes this the authoritative render. Every crop goes
+    // through it with the same chain and the same seed, so a set of sizes comes
+    // out looking like a set rather than like separate edits.
+    for (const [index, crop] of settings.crops.entries()) {
+      const canvas = document.createElement('canvas');
+      canvas.width = crop.w;
+      canvas.height = crop.h;
+      renderPipeline({
+        ctx: canvas.getContext('2d', { willReadFrequently: true }),
+        drawCrop: (ctx, w, h, options) => cropper.drawView(viewFor(crop), ctx, w, h, options),
+        width: canvas.width,
+        height: canvas.height,
+        // PNG keeps the alpha channel; JPEG cannot, so flatten predictably.
+        background: jpeg ? JPEG_MATTE : null,
+        chain,
+        rng,
+      });
 
-    const blob = await canvasToBlob(canvas, type, jpeg ? JPEG_QUALITY : undefined);
-    const name = `${sourceName}-${settings.cropW}x${settings.cropH}.${jpeg ? 'jpg' : 'png'}`;
-    await deliver(blob, name, type);
+      const blob = await canvasToBlob(canvas, type, jpeg ? JPEG_QUALITY : undefined);
+      files.push(new File([blob], exportName(crop, index, jpeg), { type }));
+    }
+
+    await deliver(files);
   } catch (error) {
     toast(error.message || 'Export failed.');
   } finally {
     el.exportBtn.disabled = false;
   }
 });
+
+/**
+ * The size is usually enough to tell one file from another, but two crops can
+ * legitimately share a size and differ only in framing, so those get numbered
+ * rather than overwriting each other in the downloads folder.
+ */
+function exportName(crop, index, jpeg) {
+  const size = `${crop.w}x${crop.h}`;
+  const duplicated = settings.crops.filter((other) => `${other.w}x${other.h}` === size).length > 1;
+  const suffix = duplicated ? `-${index + 1}` : '';
+  return `${sourceName}-${size}${suffix}.${jpeg ? 'jpg' : 'png'}`;
+}
 
 function canvasToBlob(canvas, type, quality) {
   return new Promise((resolve, reject) => {
@@ -704,14 +993,21 @@ function canvasToBlob(canvas, type, quality) {
   });
 }
 
-async function deliver(blob, name, type) {
-  const file = new File([blob], name, { type });
+/**
+ * Hand the finished files over.
+ *
+ * On iOS the share sheet is the only route back into the camera roll, and it
+ * takes several files at once, so a set of crops arrives as one sheet rather
+ * than one prompt per size. Elsewhere they download one after another with a
+ * gap between: browsers throttle or block a burst of downloads fired in the
+ * same tick, and a set of six is exactly the sort of burst that trips it.
+ */
+async function deliver(files) {
+  if (!files.length) return;
 
-  // On iOS this opens the share sheet, which is the only way to get the crop
-  // back into the camera roll. Falls back to a plain download elsewhere.
-  if (navigator.canShare?.({ files: [file] })) {
+  if (navigator.canShare?.({ files })) {
     try {
-      await navigator.share({ files: [file] });
+      await navigator.share({ files });
       return;
     } catch (error) {
       if (error.name === 'AbortError') return;
@@ -719,12 +1015,15 @@ async function deliver(blob, name, type) {
     }
   }
 
-  const url = URL.createObjectURL(blob);
-  el.download.href = url;
-  el.download.download = name;
-  el.download.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-  toast(`Saved ${name}`);
+  for (const [index, file] of files.entries()) {
+    if (index > 0) await new Promise((resolve) => { setTimeout(resolve, 350); });
+    const url = URL.createObjectURL(file);
+    el.download.href = url;
+    el.download.download = file.name;
+    el.download.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  }
+  toast(files.length === 1 ? `Saved ${files[0].name}` : `Saved ${files.length} crops`);
 }
 
 // ---------- misc ----------
@@ -762,8 +1061,7 @@ document.addEventListener('touchmove', (event) => {
 
 el.zoom.min = String(MIN_ZOOM);
 el.zoom.max = String(MAX_ZOOM);
-el.cropW.value = settings.cropW;
-el.cropH.value = settings.cropH;
+syncCropInputs();
 el.format.value = settings.format;
 el.seed.value = settings.seed;
 el.stage.classList.add('empty-state');
@@ -772,9 +1070,10 @@ el.addEffect.replaceChildren(
   ...EFFECTS.map((effect) => new Option(effect.label, effect.id)),
 );
 renderPresets();
+renderCrops();
 renderChain();
 syncChainMeta();
 syncPanes();
 invalidatePreview();
-cropper.setCrop(settings.cropW, settings.cropH);
+cropper.setCrop(activeCrop().w, activeCrop().h);
 saveSettings(settings); // pin the defaults on a first visit

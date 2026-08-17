@@ -30,7 +30,11 @@ any static host (GitHub Pages, Netlify, …) — the whole app is static files.
 - **Crops to an exact pixel size.** Presets for the usual social/wallpaper sizes,
   plus free width/height entry and a swap button for flipping the orientation. The
   export is rendered at exactly the requested pixel dimensions.
-- **Remembers the size.** The crop size (and export format) are written to
+- **Crops to several sizes at once.** Add up to six crops of one photo, each
+  framed independently, all previewed together and exported in one go — a square
+  post, a story and a link card off the same shot without three trips through
+  the editor.
+- **Remembers the sizes.** The crop sizes (and export format) are written to
   `localStorage` and restored on the next visit, so a repeated crop is one tap.
 - **Positions the photo in the crop.** Drag to pan, pinch or scroll to zoom,
   double-tap to reset. The photo is clamped so it can never be dragged away from
@@ -42,6 +46,36 @@ any static host (GitHub Pages, Netlify, …) — the whole app is static files.
   iOS the share sheet opens so the crop can go back to the camera roll;
   elsewhere it downloads.
 
+## Several crops
+
+A crop is a size *plus* a framing — `{ w, h, center, zoom }` — and the editor
+holds a list of them. One is active at a time: it is the one on the stage, the
+one the presets and the width/height fields edit, and the only one that takes
+pan and pinch. The rest keep their framing as plain data until it is their turn.
+
+They share the photo, the seed and the effect chain, which is the point. A set
+of sizes of one picture should look like a set, so the chain runs on each crop
+with the same seed rather than each being its own edit. Effects that vary by
+position — the dithers, grain, bokeh — key on the pixel coordinate, so the
+pattern lines up across crops instead of each one getting its own scatter.
+
+Because a crop can be drawn without being the active one, `src/framing.js` holds
+the geometry with no DOM in it: given a photo, a size, a centre and a zoom, it
+returns the `drawImage` source rect. `cropper.drawView(view, …)` renders any
+framing; `drawCrop` is the same call with the live one filled in. The
+alternative — making each crop active in turn and putting the stage back
+afterwards — would have made previewing a list of crops a sequence of side
+effects.
+
+Only the sizes persist. A framing is a point in one particular photo and the
+photo is never stored, so a centre restored onto next week's image would land
+somewhere arbitrary; loading a new photo starts every crop centred again. Sizes
+are worth remembering between visits, and they are what carries over.
+
+Six is the cap. Every crop in the grid renders the whole chain at its own size,
+so this is the one place where preview cost scales with how much you have set
+up.
+
 ## Two steps
 
 The editor is two ordered steps, mirroring the pipeline: **1 Crop** frames the
@@ -52,6 +86,13 @@ in. Step 1 shows the whole photo, dimmed outside the crop frame, because framing
 needs the surrounding context. Step 2 drops the source entirely and shows only
 the finished crop at its export size — what is on screen is what the file will
 contain, with nothing bleeding in around it.
+
+With more than one crop, step 2 lays them all out side by side instead, sized on
+their longest edge so a tall crop and a wide one read as the same size. A single
+crop keeps the frame-aligned preview: it is already the exact shape and place
+the file will be, and a grid of one would move it for no reason. The crop
+outline goes away with the grid, since it describes the active crop and says
+nothing useful once every crop is on screen.
 
 Framing gestures belong to step 1 for the same reason: with no photo behind the
 crop, a pan on step 2 would scrub an image that isn't on screen. Step 2 renders
@@ -351,15 +392,21 @@ size as a preset you can copy, download, or paste back in:
 ```json
 {
   "format": "imagizer.chain",
-  "version": 3,
+  "version": 4,
   "seed": "golden hour",
-  "crop": { "width": 1080, "height": 1080 },
+  "crops": [
+    { "width": 1080, "height": 1080 },
+    { "width": 1080, "height": 1920 }
+  ],
   "effects": [
     { "id": "blur", "params": { "radius": 6 } },
     { "id": "atkinson", "params": { "levels": 2, "scale": 2 } }
   ]
 }
 ```
+
+Presets carry sizes, not framings, for the same reason storage does not: a
+centre means nothing to whoever opens it with a different photo.
 
 Chain plus seed is everything needed to reproduce a look — a round trip through
 JSON renders pixel-identical output. Importing clamps out-of-range params, drops
@@ -368,7 +415,9 @@ degrades instead of failing.
 
 Version 2 renamed Pixel Sort's `maxLength` (pixels) to `maxRun` (a percentage of
 the line). Version 3 merged Grid Gate's `cellWidth` and `cellHeight` into one
-`cell`. Older presets still load — they just fall back to the default for that
+`cell`. Version 4 widened `crop` into `crops` — the one migration so far that
+loses nothing, since a single crop is a list of one and there is no guess to
+make. Older presets still load — they just fall back to the default for that
 one setting, which is a far better outcome than reading a stored `200` as a
 percentage and clamping it to an uncapped line, or picking one of two axes and
 silently changing the other.

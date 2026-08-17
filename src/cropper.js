@@ -8,6 +8,8 @@
  * changing the crop size, and it maps straight onto a drawImage() source rect.
  */
 
+import { clampCenter as clampToSource, isUpscaled, sourceRect, viewSize as windowFor } from './framing.js';
+
 export const MIN_ZOOM = 1;
 export const MAX_ZOOM = 8;
 
@@ -58,20 +60,11 @@ export function createCropper({ stage, layerHost, frame, onChange }) {
   }
 
   /** Size of the visible window in source-image pixels. */
-  function viewSize() {
-    const scale = layout.baseScale * zoom;
-    return { w: layout.fw / scale, h: layout.fh / scale };
-  }
+  const viewSize = () => windowFor(source, crop, zoom);
 
   function clampCenter() {
-    if (!layout) return;
-    const view = viewSize();
-    center.x = view.w >= source.width
-      ? source.width / 2
-      : clamp(center.x, view.w / 2, source.width - view.w / 2);
-    center.y = view.h >= source.height
-      ? source.height / 2
-      : clamp(center.y, view.h / 2, source.height - view.h / 2);
+    if (!source) return;
+    center = clampToSource(source, viewSize(), center);
   }
 
   /** Top-left of the visible window, in source-image pixels. */
@@ -104,14 +97,13 @@ export function createCropper({ stage, layerHost, frame, onChange }) {
 
   function stats() {
     if (!source) return null;
-    const view = layout ? viewSize() : { w: 0, h: 0 };
+    const view = viewSize();
     return {
       zoom,
       crop: { ...crop },
       source: { w: source.width, h: source.height },
       sampled: { w: view.w, h: view.h },
-      // true when the crop asks for more pixels than the photo can supply
-      upscaled: view.w < crop.w - 0.5 || view.h < crop.h - 0.5,
+      upscaled: isUpscaled(source, crop, zoom),
     };
   }
 
@@ -297,6 +289,42 @@ export function createCropper({ stage, layerHost, frame, onChange }) {
   }
 
   /**
+   * Draw an arbitrary framing — not necessarily the one on screen.
+   *
+   * This is what lets several crops preview and export at once: each is a
+   * plain `{ crop, center, zoom }`, and none of them has to become the active
+   * one first. `drawCrop` is the same call with the live framing filled in.
+   */
+  function drawView(view, ctx, width, height, { background = null } = {}) {
+    if (!source) throw new Error('No photo loaded.');
+    const rect = sourceRect(source, view);
+
+    ctx.clearRect(0, 0, width, height);
+    if (background) {
+      ctx.fillStyle = background;
+      ctx.fillRect(0, 0, width, height);
+    }
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(source, rect.x, rect.y, rect.w, rect.h, 0, 0, width, height);
+  }
+
+  /** The live framing, as plain data the app can store per crop. */
+  function getView() {
+    return { crop: { ...crop }, center: { ...center }, zoom };
+  }
+
+  /** Restore a stored framing. Out-of-range values are clamped as usual. */
+  function setView(view) {
+    if (!view) return;
+    if (view.crop) crop = { w: view.crop.w, h: view.crop.h };
+    if (view.center) center = { ...view.center };
+    if (Number.isFinite(view.zoom)) zoom = clamp(view.zoom, MIN_ZOOM, MAX_ZOOM);
+    measure();
+    render();
+  }
+
+  /**
    * Enable or disable framing gestures. Positioning belongs to the crop step;
    * once the stage is showing the finished crop there is no surrounding photo
    * to drag against, so a pan there would just scrub an image that isn't shown.
@@ -324,6 +352,9 @@ export function createCropper({ stage, layerHost, frame, onChange }) {
     render,
     // Step one of the render pipeline; see src/pipeline.js for where it is run.
     drawCrop,
+    drawView,
+    getView,
+    setView,
     getFrame,
     setInteractive,
     hasSource: () => Boolean(source),

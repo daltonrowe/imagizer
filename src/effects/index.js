@@ -131,8 +131,11 @@ export const CHAIN_FORMAT = 'imagizer.chain';
  *    single `cell` (a percentage of the shorter side). Two keys cannot merge
  *    into one without guessing which the user meant, and either guess changes
  *    the other axis, so an older preset falls back to the default cell size.
+ * 4: `crop` became `crops`, a list, so a preset can carry a whole set of sizes.
+ *    A version 3 preset's single crop reads as a list of one, which loses
+ *    nothing — this is the one migration so far that is a clean widening.
  */
-export const CHAIN_VERSION = 3;
+export const CHAIN_VERSION = 4;
 
 /** Fill in defaults and clamp anything out of range or unrecognised. */
 export function normalizeParams(effect, params = {}) {
@@ -301,14 +304,16 @@ function randomParams(effect, rng) {
 
 // ---------- JSON ----------
 
-/** Serialise a look — chain, seed and crop — as a shareable preset. */
-export function chainToJSON({ chain, seed, crop }) {
+/** Serialise a look — chain, seed and crop sizes — as a shareable preset. */
+export function chainToJSON({ chain, seed, crops }) {
   return JSON.stringify(
     {
       format: CHAIN_FORMAT,
       version: CHAIN_VERSION,
       seed,
-      crop: crop ? { width: crop.w, height: crop.h } : undefined,
+      // Sizes only. Framing is measured against one particular photo, so it
+      // would mean nothing to whoever opens this with a different one.
+      crops: crops?.length ? crops.map((crop) => ({ width: crop.w, height: crop.h })) : undefined,
       effects: normalizeChain(chain).map((item) => ({
         id: item.id,
         ...(item.enabled ? {} : { enabled: false }),
@@ -340,14 +345,16 @@ export function chainFromJSON(text) {
   const chain = normalizeChain(parsed.effects);
   const dropped = parsed.effects.length - chain.length;
 
-  const crop = parsed.crop && Number(parsed.crop.width) && Number(parsed.crop.height)
-    ? { w: Number(parsed.crop.width), h: Number(parsed.crop.height) }
-    : null;
+  // Version 3 and earlier wrote a single `crop`; read it as a list of one.
+  const listed = Array.isArray(parsed.crops) ? parsed.crops : [parsed.crop];
+  const crops = listed
+    .filter((crop) => crop && Number(crop.width) > 0 && Number(crop.height) > 0)
+    .map((crop) => ({ w: Number(crop.width), h: Number(crop.height) }));
 
   return {
     chain,
     seed: typeof parsed.seed === 'string' ? parsed.seed : null,
-    crop,
+    crops,
     dropped,
   };
 }
