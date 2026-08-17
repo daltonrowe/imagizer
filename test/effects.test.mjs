@@ -63,9 +63,9 @@ test('every effect is registered with the metadata the UI needs', () => {
     'grain', 'greyscale', 'gridgate', 'halftone', 'huerotate', 'invert',
     'kaleidoscope', 'lens', 'levels', 'lightleak', 'palette', 'pixelate',
     'pixelsort', 'posterize', 'randomdither', 'reblend', 'reblendprevious',
-    'ripple', 'scanlines', 'shapemask', 'sharpen', 'slicer', 'solarize',
-    'spotlight', 'starfilter', 'streak', 'threshold', 'tiltshift', 'twirl',
-    'vignette', 'warp',
+    'ripple', 'scalerepeat', 'scanlines', 'shapemask', 'sharpen', 'slicer',
+    'solarize', 'spotlight', 'starfilter', 'streak', 'threshold',
+    'tiltshift', 'twirl', 'vignette', 'warp',
   ]);
   for (const effect of EFFECTS) {
     assert.equal(typeof effect.label, 'string');
@@ -2280,7 +2280,7 @@ test('every effect leaves fully transparent pixels alone or transparent', () => 
     'shapemask',    // fills outside the shape
     'gridgate',     // fills the blocked gaps when not transparent
     // Effects that move opaque pixels onto empty ground.
-    'blockshuffle', 'slicer',
+    'blockshuffle', 'slicer', 'scalerepeat',
     'lens', 'ripple', 'warp', 'kaleidoscope', 'twirl',
     // Effects that spread alpha itself, which is what softening a cutout is.
     'blur', 'tiltshift', 'pixelate',
@@ -3008,4 +3008,112 @@ test('a preset written before the order existed still reblends over', () => {
   }));
   assert.equal(parsed.chain[0].params.order, 'over');
   assert.equal(parsed.chain[0].params.opacity, 70);
+});
+
+// ---------- scale repeat ----------
+
+/**
+ * A frame of white with a black interior. Where the white band lands after
+ * scaling is the whole geometry, readable off any row.
+ *
+ * The band has to be thick. At 2px it is half a pixel wide once scaled to 25%
+ * and simply falls between samples, so the copy is there and the test cannot
+ * see it — which reads as a missing copy rather than as a fixture too fine for
+ * the question being asked.
+ */
+const outline = (size, band = 12) => image(size, size, (x, y) =>
+  (x < band || y < band || x >= size - band || y >= size - band
+    ? [255, 255, 255, 255] : [20, 20, 20, 255]));
+
+/** Columns along the middle row where the outline shows. */
+function edges(img) {
+  const y = (img.height - 1) / 2;
+  const out = [];
+  for (let x = 0; x < img.width; x++) if (bright(img, x, y) > 140) out.push(x);
+  return out;
+}
+
+test('copy sizes are the scale factor compounded, not chained', () => {
+  // A 101px frame about its centre: the outer edge of copy n sits at
+  // 50 - 50 * factor^n, so at 50% that is 25, 37.5 and 43.75. Sizes that
+  // followed the running result instead would not land on those.
+  const img = run('scalerepeat', outline(101),
+    { iterations: 3, scale: 50, mode: 'normal', origin: 'center', opacity: 100 });
+  const lit = edges(img);
+  assert.ok(lit.includes(0), 'the original outline is still there');
+  for (const expected of [25, 38, 44]) {
+    assert.ok(lit.some((x) => Math.abs(x - expected) <= 1), `no copy edge near ${expected}: ${lit}`);
+  }
+  // And the gaps between them are the dark interior, not more white.
+  for (const gap of [33, 42, 48]) {
+    assert.ok(!lit.includes(gap), `something unexpected at ${gap}: ${lit}`);
+  }
+});
+
+test('more iterations means more copies', () => {
+  const count = (iterations) => edges(run('scalerepeat', outline(101),
+    { iterations, scale: 60, mode: 'normal', origin: 'center', opacity: 100 })).length;
+  assert.ok(count(4) > count(2), 'four copies should show more outline than two');
+  assert.ok(count(2) > count(1), 'and two more than one');
+});
+
+test('the origin decides where the copies gather', () => {
+  // Anchored top-left at 50%, the copy occupies exactly the left half and stops.
+  const corner = edges(run('scalerepeat', outline(101),
+    { iterations: 1, scale: 50, mode: 'normal', origin: 'topleft', opacity: 100 }));
+  assert.ok(corner.includes(50), 'the copy reaches the halfway point');
+  assert.ok(!corner.includes(51), 'and stops there');
+  assert.ok(!corner.some((x) => x > 55 && x < 89), `nothing should sit right of centre: ${corner}`);
+
+  // The same settings anchored bottom-right mirror it.
+  const other = edges(run('scalerepeat', outline(101),
+    { iterations: 1, scale: 50, mode: 'normal', origin: 'bottomright', opacity: 100 }));
+  assert.ok(other.includes(50), 'the mirrored copy starts at the halfway point');
+  assert.ok(!other.some((x) => x > 11 && x < 50), `nothing should sit left of centre: ${other}`);
+});
+
+test('scaling over 100% grows the copies outward', () => {
+  const img = run('scalerepeat', outline(101),
+    { iterations: 1, scale: 200, mode: 'normal', origin: 'center', opacity: 100 });
+  // Doubled about the centre, the frame's own outline is pushed off-frame and
+  // what fills the view is the interior, magnified.
+  assert.equal(bright(img, 50, 50), 20, 'the middle is still interior');
+  assert.equal(bright(img, 2, 50), 20, 'and the old outline has gone past the edge');
+});
+
+test('the blend mode applies to each copy as it lands', () => {
+  const flat = () => image(40, 40, () => [200, 200, 200, 255]);
+  const once = run('scalerepeat', flat(),
+    { iterations: 1, scale: 100, mode: 'multiply', origin: 'center', opacity: 100 });
+  const thrice = run('scalerepeat', flat(),
+    { iterations: 3, scale: 100, mode: 'multiply', origin: 'center', opacity: 100 });
+
+  // 0.784^2 = 0.615 and 0.784^4 = 0.378 of full white.
+  assert.ok(Math.abs(bright(once, 20, 20) - 157) <= 1, `one multiply: ${bright(once, 20, 20)}`);
+  assert.ok(Math.abs(bright(thrice, 20, 20) - 96) <= 2, `three multiplies: ${bright(thrice, 20, 20)}`);
+});
+
+test('scale repeat at 100% in normal mode is a no-op', () => {
+  // Every copy lands exactly on the original, so nothing can change — which is
+  // not true of a mode that accumulates, as the multiply above shows.
+  const img = image(32, 32, texture);
+  const copy = [...img.data];
+  run('scalerepeat', img, { iterations: 5, scale: 100, mode: 'normal', origin: 'center', opacity: 100 });
+  assert.deepEqual([...img.data], copy);
+});
+
+test('scale repeat at zero opacity changes nothing', () => {
+  const img = image(32, 32, texture);
+  const copy = [...img.data];
+  run('scalerepeat', img, { iterations: 4, scale: 60, opacity: 0 });
+  assert.deepEqual([...img.data], copy);
+});
+
+test('a shrinking copy carries its own transparency', () => {
+  // The area a shrunken copy does not reach must be left as it was, not
+  // painted with the edge of the copy stretched out to fill the frame.
+  const img = image(64, 64, () => [200, 40, 40, 255]);
+  run('scalerepeat', img, { iterations: 1, scale: 50, mode: 'normal', origin: 'center', opacity: 100 });
+  for (let i = 3; i < img.data.length; i += 4) assert.equal(img.data[i], 255, 'nothing went transparent');
+  assert.deepEqual(at(img, 2, 2), [200, 40, 40, 255], 'the corner is the original, untouched');
 });

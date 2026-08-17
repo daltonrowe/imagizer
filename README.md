@@ -147,6 +147,7 @@ input of the next. Each has its own settings:
 | **Ripple** | Sinusoidal waves — rings, rows or columns |
 | **Noise Warp** | Displaces by a smooth noise field |
 | **Kaleidoscope** | Folds the frame into a wedge and mirrors it around |
+| **Scale Repeat** | Stacks scaled copies of the image on itself — the droste |
 | **Colour Key** | Knocks a colour out to transparency, matching on hue |
 | **Vignette** | Darkens in from the edges, heaviest in the corners |
 | **Spotlight** | Darkens everything outside a circle in the middle |
@@ -336,6 +337,20 @@ rotation preserves radius, so it is the one geometric effect that cannot leave a
 gap. Noise warp's lattice and Block Shuffle's grid are both measured in cells
 across the image rather than in pixels, so the same seed distorts the preview and
 the export identically instead of rearranging itself on download.
+
+**Scale Repeat** lays copies of the image back over itself, each one a scaling
+of the image *as it arrived* rather than of the copy before it — so the sizes are
+`factor`, `factor²`, `factor³`. Compounding from the original is what keeps them
+clean: chaining each off the last would resample an already resampled image and
+the innermost copy would be mush. Under 100% they nest inward from the origin,
+which is the picture-within-a-picture; over 100% they grow outward and each
+covers more than the last. At exactly 100% every copy lands on the original — a
+no-op in Normal, and very much not one in a mode that accumulates, where eight
+multiplies is a different image from one. Copies go down largest first so the
+last lands on top, which is what makes a shrinking stack read as depth.
+
+Cost scales with iterations, since each is a pass over the frame: a 1080² export
+is around 230ms at four and 870ms at twelve.
 
 **Colour Key** matches on hue and saturation with brightness as a separate, much
 looser tolerance. A green wall is one colour to the eye but hundreds to the
