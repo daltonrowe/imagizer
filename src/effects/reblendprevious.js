@@ -14,6 +14,10 @@ import { BLEND_PARAMS, composite } from './blendmodes.js';
  * shifts what a given count reaches, which matches what the list looks like.
  * A count that runs off the front of the chain lands on the chain input, which
  * is the most useful thing there is to land on and never a crash.
+ *
+ * Order puts the earlier stage above or below the current one, with the blend
+ * mode applying to whichever is on top. Putting it underneath is how you get an
+ * earlier stage to show through what a later one cut away, rather than over it.
  */
 export default {
   id: 'reblendprevious',

@@ -10,6 +10,12 @@ import { BLEND_PARAMS, composite } from './blendmodes.js';
  * make the effect a no-op.
  *
  * For an earlier stage rather than the very first, see Reblend Previous.
+ *
+ * Order decides which of the two ends up on top, and the blend mode always
+ * applies to whichever that is. Underneath is the more useful half than it
+ * sounds: the photo behind a thresholded image shows through wherever the
+ * threshold left transparency, and multiplying it under a dither darkens the
+ * dither's white cells with the original tone instead of the other way round.
  */
 export default {
   id: 'reblend',

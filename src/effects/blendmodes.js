@@ -47,16 +47,39 @@ export const MODES = [
   { value: 'exclusion', label: 'Exclusion' },
 ];
 
+/** Which of the two images ends up on top of the stack. */
+export const ORDERS = [
+  { value: 'over', label: 'Incoming on top' },
+  { value: 'under', label: 'Incoming underneath' },
+];
+
 export const BLEND_PARAMS = [
   { key: 'mode', label: 'Blend mode', type: 'select', default: 'normal', options: MODES },
+  { key: 'order', label: 'Order', type: 'select', default: 'over', options: ORDERS },
   { key: 'opacity', label: 'Opacity', type: 'range', min: 0, max: 100, step: 1, default: 50, unit: '%', random: [25, 85] },
 ];
 
 /**
- * Lay `source` over `image` in place. Both must be the same size; a mismatch is
- * left alone rather than smeared across the wrong rows.
+ * Composite `source` with `image`, writing the result into `image`. Both must
+ * be the same size; a mismatch is left alone rather than smeared across the
+ * wrong rows.
+ *
+ * `order` decides which one is the backdrop and which is the layer on top of
+ * it. The blend function always takes the pair as (backdrop, top), so switching
+ * the order really does swap the arguments rather than just reversing an
+ * opacity — for an asymmetric mode like Color Dodge or Soft Light those are
+ * entirely different pictures.
+ *
+ * Opacity always belongs to the incoming image, whichever end of the stack it
+ * is at: it is the layer being added, so zero is a no-op either way.
+ *
+ * Underneath has a consequence worth knowing: where the current image is opaque
+ * and the mode is Normal, an image behind it is hidden completely, and the
+ * effect looks broken when it is doing exactly what it says. It shows through
+ * where the current image is transparent, and everywhere if the mode is one
+ * that actually mixes the two.
  */
-export function composite(image, source, { mode, opacity: percent }) {
+export function composite(image, source, { mode, opacity: percent, order = 'over' }) {
   if (!source) return image;
 
   const { data } = image;
@@ -67,13 +90,18 @@ export function composite(image, source, { mode, opacity: percent }) {
   if (opacity <= 0) return image;
 
   const blend = BLEND[mode] ?? BLEND.normal;
+  const under = order === 'under';
 
   for (let i = 0; i < data.length; i += 4) {
-    const backdropAlpha = data[i + 3] / 255;
-    const sourceAlpha = (src[i + 3] / 255) * opacity;
-    if (sourceAlpha <= 0) continue;
+    const currentAlpha = data[i + 3] / 255;
+    const incomingAlpha = (src[i + 3] / 255) * opacity;
+    // Nothing arriving means nothing to composite, at either end of the stack.
+    if (incomingAlpha <= 0) continue;
 
-    const outAlpha = sourceAlpha + backdropAlpha * (1 - sourceAlpha);
+    const backdropAlpha = under ? incomingAlpha : currentAlpha;
+    const topAlpha = under ? currentAlpha : incomingAlpha;
+
+    const outAlpha = topAlpha + backdropAlpha * (1 - topAlpha);
     if (outAlpha <= 0) {
       data[i] = 0;
       data[i + 1] = 0;
@@ -83,13 +111,13 @@ export function composite(image, source, { mode, opacity: percent }) {
     }
 
     for (let c = 0; c < 3; c++) {
-      const cb = data[i + c] / 255;
-      const cs = src[i + c] / 255;
-      // W3C source-over with a blend function: the source shows plainly where
-      // the backdrop is transparent, and blends where both are present.
-      const co = sourceAlpha * (1 - backdropAlpha) * cs
-        + sourceAlpha * backdropAlpha * clamp(blend(cb, cs), 0, 1)
-        + (1 - sourceAlpha) * backdropAlpha * cb;
+      const cb = (under ? src[i + c] : data[i + c]) / 255;
+      const cs = (under ? data[i + c] : src[i + c]) / 255;
+      // W3C source-over with a blend function: the top layer shows plainly
+      // where the backdrop is transparent, and blends where both are present.
+      const co = topAlpha * (1 - backdropAlpha) * cs
+        + topAlpha * backdropAlpha * clamp(blend(cb, cs), 0, 1)
+        + (1 - topAlpha) * backdropAlpha * cb;
       data[i + c] = (co / outAlpha) * 255;
     }
     data[i + 3] = outAlpha * 255;

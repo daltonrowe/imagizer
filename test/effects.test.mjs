@@ -2918,3 +2918,94 @@ test('a preset with no crops at all still loads', () => {
   }));
   assert.deepEqual(parsed.crops, []);
 });
+
+// ---------- reblend order ----------
+
+/**
+ * Composite two flat tones directly, so the two images are exactly what the
+ * test says they are rather than whatever a chain happened to produce.
+ */
+function stack(current, incoming, params, id = 'reblend') {
+  const img = image(4, 4, () => [current, current, current, 255]);
+  const source = {
+    data: Uint8ClampedArray.from(image(4, 4, () => [incoming, incoming, incoming, 255]).data),
+    width: 4,
+    height: 4,
+  };
+  getEffect(id).apply(img, {
+    params: { ...defaults(id), opacity: 100, ...params },
+    rng: rng(),
+    source,
+    frameAt: () => source,
+  });
+  return at(img, 0, 0);
+}
+
+for (const id of ['reblend', 'reblendprevious']) {
+  test(`${id} offers an order, defaulting to over`, () => {
+    const spec = getEffect(id).params.find((p) => p.key === 'order');
+    assert.equal(spec?.type, 'select');
+    assert.equal(spec.default, 'over');
+    assert.deepEqual(spec.options.map((o) => o.value), ['over', 'under']);
+  });
+
+  test(`${id} puts the blend mode on whichever image is on top`, () => {
+    // Colour Dodge is cb / (1 - cs), which is nothing like cs / (1 - cb) — so
+    // if the order only reversed an opacity rather than swapping the pair, both
+    // of these would come out the same.
+    const over = stack(128, 64, { mode: 'color-dodge', order: 'over' }, id);
+    const under = stack(128, 64, { mode: 'color-dodge', order: 'under' }, id);
+
+    assert.ok(Math.abs(over[0] - 171) <= 1, `over: dodge(0.50, 0.25) should be 171, got ${over[0]}`);
+    assert.ok(Math.abs(under[0] - 128) <= 1, `under: dodge(0.25, 0.50) should be 128, got ${under[0]}`);
+  });
+}
+
+test('an opaque image hides what goes underneath it, as layers do', () => {
+  // Documented rather than worked around: Normal mode under an opaque image is
+  // a no-op, which looks broken and is exactly right.
+  assert.deepEqual(stack(200, 40, { mode: 'normal', order: 'under' }).slice(0, 3), [200, 200, 200]);
+  assert.deepEqual(stack(200, 40, { mode: 'normal', order: 'over' }).slice(0, 3), [40, 40, 40]);
+});
+
+test('underneath shows through wherever the current image is transparent', () => {
+  // Threshold to white, cut holes in it, then bring the photo back behind it.
+  const out = render([
+    createItem('threshold', { level: 0, softness: 0, invert: false }),
+    createItem('gridgate', { shape: 'square', cell: 25, aperture: 50, transparent: true }),
+    createItem('reblend', { mode: 'normal', order: 'under', opacity: 100 }),
+  ], () => [200, 40, 40, 255], 64);
+
+  let photo = 0;
+  let white = 0;
+  for (let i = 0; i < out.data.length; i += 4) {
+    assert.equal(out.data[i + 3], 255, 'the holes are filled in by what is behind');
+    if (out.data[i] === 200 && out.data[i + 1] === 40) photo++;
+    if (out.data[i] === 255 && out.data[i + 1] === 255) white++;
+  }
+  assert.ok(photo > 0, 'the photo shows through the gaps');
+  assert.ok(white > 0, 'and the thresholded image still covers the rest');
+});
+
+test('opacity belongs to the incoming image at either end of the stack', () => {
+  // Zero is a no-op both ways: it is the layer being added that fades out.
+  for (const order of ['over', 'under']) {
+    assert.deepEqual(stack(180, 20, { mode: 'multiply', order, opacity: 0 }).slice(0, 3), [180, 180, 180], order);
+  }
+  // And half-strength lands between doing nothing and doing all of it.
+  const full = stack(180, 20, { mode: 'multiply', order: 'under', opacity: 100 })[0];
+  const half = stack(180, 20, { mode: 'multiply', order: 'under', opacity: 50 })[0];
+  assert.ok(half > full && half < 180, `half opacity should sit between ${full} and 180, got ${half}`);
+});
+
+test('a preset written before the order existed still reblends over', () => {
+  // Adding a param with a default costs an old preset nothing, which is why
+  // this needed no chain version bump.
+  const parsed = chainFromJSON(JSON.stringify({
+    format: 'imagizer.chain',
+    version: 4,
+    effects: [{ id: 'reblend', params: { mode: 'multiply', opacity: 70 } }],
+  }));
+  assert.equal(parsed.chain[0].params.order, 'over');
+  assert.equal(parsed.chain[0].params.opacity, 70);
+});

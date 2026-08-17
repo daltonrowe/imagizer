@@ -165,7 +165,7 @@ input of the next. Each has its own settings:
 | **Random Dither** | A random threshold per cell — grain, not pattern |
 | **Film Grain** | Normally distributed grain, strongest in the midtones |
 | **Scanlines** | CRT lines, with an optional RGB phosphor mask |
-| **Reblend Original** | Composites the untouched crop back on top |
+| **Reblend Original** | Composites the untouched crop back over or under the result |
 | **Reblend Previous** | The same, reaching back a chosen number of stages instead |
 | **Echo** | Lays several earlier stages back on, each fainter |
 | **Difference Key** | Keeps only what an earlier stage changed |
@@ -347,7 +347,7 @@ what lets one softness control feather all of them.
 ### Reblend
 
 **Reblend Original** composites the untouched crop back over the processed
-image, with an opacity and a choice of twelve blend modes. Threshold a photo to
+image, with an opacity, a choice of twelve blend modes, and an order. Threshold a photo to
 hard black and white, then reblend the original at 40% and you get the graphic
 shape with the real colour pushed back through it.
 
@@ -377,6 +377,20 @@ composited at a decaying opacity, oldest first so the nearest stage ends on top.
 that came through unchanged, which leaves precisely the footprint of the effects
 in between — the sorted streaks without the photo they came from. Both declare
 `historyDepth`, so the runner keeps exactly as many frames as they ask for.
+
+Order puts the incoming image above or below the current one, and the blend
+mode always applies to whichever ends up on top — the pair really is swapped,
+which for an asymmetric mode like Colour Dodge or Soft Light is a different
+picture rather than a reversed opacity. Opacity stays with the incoming image
+at either end of the stack, since that is the layer being added, so zero is a
+no-op both ways.
+
+Underneath behaves the way layers do, which is worth knowing before it looks
+broken: an opaque image hides what goes behind it, so Normal mode under a
+finished picture does nothing at all. It earns its keep where the current image
+is transparent — reblend the photo under a grid-gated threshold and it fills the
+holes while the graphic stays on top — and with any mode that genuinely mixes
+the two.
 
 Blending follows the W3C compositing spec rather than a plain cross-fade, so the
 modes match `mix-blend-mode` and Photoshop, and alpha composites correctly
